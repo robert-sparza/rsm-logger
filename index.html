@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0A1830">
+<title>RSM Match Logger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;800&family=Syncopate:wght@700&display=swap" rel="stylesheet">
+<style>
+:root{--blue:#3060A8;--red:#D80030;--teal:#00A890;--yellow:#F0C000;--navy:#0A1830;--ink:#EAF0FA;--mute:#9AA8C0;--card:#12254A}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{background:var(--navy);color:var(--ink);font-family:Montserrat,system-ui,sans-serif;min-height:100dvh;
+  padding:max(12px,env(safe-area-inset-top)) 14px max(16px,env(safe-area-inset-bottom))}
+h1{font-family:Syncopate,sans-serif;font-size:15px;letter-spacing:.08em}
+header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.pill{font-size:12px;font-weight:600;padding:4px 10px;border-radius:99px;background:var(--card);color:var(--mute)}
+.pill.ok{background:rgba(0,168,144,.18);color:#5fe0c8}.pill.warn{background:rgba(240,192,0,.18);color:var(--yellow)}
+.card{background:var(--card);border-radius:14px;padding:14px;margin-bottom:12px}
+label{display:block;font-size:12px;font-weight:600;color:var(--mute);margin:10px 0 4px}
+select,input,textarea{width:100%;font:600 16px Montserrat,sans-serif;padding:11px 12px;border-radius:10px;border:1px solid #2a4170;background:#0d1d3b;color:var(--ink)}
+textarea{font-size:13px;min-height:80px}
+.row{display:flex;gap:10px}.row>*{flex:1}
+button{font-family:inherit;border:0;border-radius:14px;color:#fff;cursor:pointer}
+.btn{font-weight:800;font-size:15px;padding:13px;background:var(--blue);width:100%}
+.btn.ghost{background:transparent;border:1px solid #2a4170;color:var(--mute)}
+.score{display:flex;align-items:center;justify-content:space-between;text-align:center;gap:8px}
+.score .team{flex:1;font-weight:800;font-size:14px;line-height:1.2}
+.score .num{font-family:Syncopate,sans-serif;font-size:42px}
+.pad{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+.big{font-family:Syncopate,sans-serif;font-size:15px;letter-spacing:.04em;padding:26px 8px;min-height:120px;line-height:1.4;box-shadow:0 6px 0 rgba(0,0,0,.35)}
+.big:active{transform:translateY(4px);box-shadow:0 2px 0 rgba(0,0,0,.35)}
+.home{background:var(--red)}.away{background:var(--teal)}
+.jug{grid-column:1/-1;background:var(--yellow);color:var(--navy);min-height:110px;font-size:19px}
+.undo{grid-column:1/-1;background:#26385e;color:var(--mute);font-family:Montserrat;font-size:14px;padding:12px;min-height:0;box-shadow:none}
+ul{list-style:none;font-size:13px}
+li{display:flex;justify-content:space-between;padding:8px 2px;border-bottom:1px solid #1e335e}
+li .t{color:var(--mute);font-variant-numeric:tabular-nums}
+li.undone{opacity:.4;text-decoration:line-through}
+.flash{position:fixed;inset:0;pointer-events:none;background:#fff;opacity:0;transition:opacity .35s}
+.hide{display:none}
+small{color:var(--mute);font-size:12px;line-height:1.5;display:block;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="flash" id="flash"></div>
+<header><h1>RSM · LOGGER</h1><span class="pill" id="net">—</span></header>
+
+<!-- CONFIG (once) -->
+<section id="cfg" class="card hide">
+  <b>Configuración (solo una vez)</b>
+  <label>Pega el enlace "pre-rellenado" de tu Google Form</label>
+  <textarea id="prefill" placeholder="https://docs.google.com/forms/d/e/.../viewform?usp=pp_url&entry.123=MATCH&..."></textarea>
+  <small>En el formulario usa estos valores de ejemplo: MATCH, EVENT, TAPID, TIME.</small>
+  <div style="height:10px"></div>
+  <button class="btn" id="saveCfg">Guardar</button>
+</section>
+
+<!-- MATCH SETUP -->
+<section id="setup" class="card hide">
+  <b>Nuevo partido</b>
+  <div class="row"><div><label>Local</label><select id="home"></select></div>
+  <div><label>Visitante</label><select id="away"></select></div></div>
+  <div class="row"><div><label>Categoría</label><input id="cat" value="Infantil"></div>
+  <div><label>Fecha</label><input id="date" type="date"></div></div>
+  <label>Liga / Copa</label><select id="league"></select>
+  <div style="height:12px"></div>
+  <button class="btn" id="start">Empezar partido</button>
+  <div style="height:8px"></div>
+  <button class="btn ghost" id="openCfg">Configuración</button>
+</section>
+
+<!-- LIVE -->
+<section id="live" class="hide">
+  <div class="card score">
+    <div class="team" id="hName"></div><div class="num" id="hNum">0</div>
+    <div style="color:var(--mute)">–</div>
+    <div class="num" id="aNum">0</div><div class="team" id="aName"></div>
+  </div>
+  <div class="pad">
+    <button class="big home" data-ev="GOL_LOCAL">⚽<br>GOL<br>LOCAL</button>
+    <button class="big away" data-ev="GOL_VISITA">⚽<br>GOL<br>VISITA</button>
+    <button class="big jug" data-ev="JUGADA">⭐ JUGADA</button>
+    <button class="big undo" data-ev="DESHACER">↩ Deshacer último</button>
+  </div>
+  <div class="card"><b style="font-size:13px">Registro</b><ul id="log"></ul></div>
+  <button class="btn ghost" id="end">Terminar partido</button>
+</section>
+
+<script>
+const TEAMS=[["Atletico_Frances","Atlético Francés"],["Division","División del Norte"],["academia_atlas","Academia Atlas"],["Academia_Panteras","Academia Panteras"],["Cachorros","Cachorros Soccer Kids"],["Calexico_earthquakes","Calexico Earthquakes"],["Centinelas","Centinelas"],["Toros_Mexicali","Toros Mexicali"],["Xochicali","Xochicali FC"],["Coruna","Deportivo La Coruña"],["Baja_Soccer","Baja Soccer"],["Rayados","Rayados Monterrey"],["Barca","Barca Mexicali"],["Cruz_azul","Cruz Azul"],["Chula_Vista","Chula Vista FC"],["Xolos","Xolos"]];
+const LEAGUES=[["Liga_Integral","Liga Integral"],["Copa_Amistad","Copa Amistad"],["Copa_Gol_Center","Copa Gol Center"],["Liga_Urbana","Liga Urbana"],["Liga_CPAA","Liga CPAA"],["","(otra / ninguna)"]];
+const $=id=>document.getElementById(id);
+const store={get(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+// RSM Logger Google Form (pre-configured; can still be changed in Configuración)
+const DEFAULT_CFG={action:"https://docs.google.com/forms/d/e/1FAIpQLSdpteq8mAYJkXu6oQgAjrhTK1zWrPbV-lhLNR2s3AZzgiS_NA/formResponse",
+  ids:{match:"entry.916674111",event:"entry.1769279584",tap:"entry.1077296404",time:"entry.912547610"}};
+let cfg=store.get("rsm_cfg",null)||DEFAULT_CFG, match=store.get("rsm_match",null), queue=store.get("rsm_queue",[]);
+
+function fill(sel,list){sel.innerHTML=list.map(([k,n])=>`<option value="${k}">${n}</option>`).join("")}
+fill($("home"),TEAMS);fill($("away"),TEAMS);$("away").selectedIndex=1;fill($("league"),LEAGUES);
+$("date").value=new Date().toLocaleDateString("en-CA");
+
+function parsePrefill(url){
+  const m=url.match(/forms\/d\/e\/([^/]+)\//); if(!m) return null;
+  const want={MATCH:"match",EVENT:"event",TAPID:"tap",TIME:"time"}, ids={};
+  for(const [,id,val] of url.matchAll(/entry\.(\d+)=([^&]+)/g)){const k=want[decodeURIComponent(val).toUpperCase()]; if(k) ids[k]="entry."+id}
+  if(Object.keys(ids).length<4) return null;
+  return {action:`https://docs.google.com/forms/d/e/${m[1]}/formResponse`,ids};
+}
+function show(){
+  $("cfg").classList.toggle("hide",!!cfg); $("setup").classList.toggle("hide",!cfg||!!match); $("live").classList.toggle("hide",!cfg||!match);
+  if(match) render(); net();
+}
+$("saveCfg").onclick=()=>{const c=parsePrefill($("prefill").value.trim()); if(!c){alert("No encuentro MATCH, EVENT, TAPID y TIME en el enlace. Revisa el pre-rellenado.");return} cfg=c;store.set("rsm_cfg",cfg);show()};
+$("openCfg").onclick=()=>{cfg=null;show()};
+$("start").onclick=()=>{
+  const h=$("home").value,a=$("away").value; if(h===a){alert("Elige dos equipos distintos");return}
+  const [y,mo,d]=$("date").value.split("-"); const key=`${h}_vs_${a}_${mo}${d}${y.slice(2)}`;
+  match={key,h,a,hn:$("home").selectedOptions[0].text,an:$("away").selectedOptions[0].text,cat:$("cat").value,league:$("league").value,events:[]};
+  store.set("rsm_match",match); send("INICIO"); show();
+};
+$("end").onclick=()=>{if(!confirm("¿Terminar este partido?"))return; send("FIN"); match=null;store.set("rsm_match",null);show()};
+document.querySelectorAll("[data-ev]").forEach(b=>b.onclick=()=>{
+  const ev=b.dataset.ev;
+  if(ev==="DESHACER"){const last=[...match.events].reverse().find(e=>!e.undone&&e.ev!=="INICIO"); if(!last)return; last.undone=true; send("DESHACER:"+last.tap);}
+  else send(ev);
+  if(navigator.vibrate) navigator.vibrate(ev==="DESHACER"?30:[60,40,60]);
+  const f=$("flash");f.style.opacity=.35;setTimeout(()=>f.style.opacity=0,120);
+});
+function send(ev){
+  const now=new Date(), tap=now.getTime().toString(36)+Math.random().toString(36).slice(2,5);
+  if(match && !ev.startsWith("DESHACER")) match.events.push({ev,tap,t:now.toISOString()});
+  store.set("rsm_match",match);
+  queue.push({match:match?match.key:"",event:ev,tap,time:now.toISOString()}); store.set("rsm_queue",queue);
+  flush(); render();
+}
+let flushing=false;
+async function flush(){
+  if(flushing||!cfg) return; flushing=true;
+  while(queue.length){
+    const q=queue[0], body=new URLSearchParams();
+    body.set(cfg.ids.match,q.match);body.set(cfg.ids.event,q.event);body.set(cfg.ids.tap,q.tap);body.set(cfg.ids.time,q.time);
+    try{await fetch(cfg.action,{method:"POST",mode:"no-cors",body}); queue.shift(); store.set("rsm_queue",queue)}
+    catch(e){break}
+  }
+  flushing=false; net();
+}
+function net(){const p=$("net"); if(!cfg){p.textContent="sin configurar";p.className="pill";return}
+  if(queue.length){p.textContent=`${queue.length} pendiente(s)`;p.className="pill warn"} else {p.textContent="enviado ✓";p.className="pill ok"}}
+function render(){
+  if(!match) return;
+  const live=match.events.filter(e=>!e.undone);
+  $("hName").textContent=match.hn;$("aName").textContent=match.an;
+  $("hNum").textContent=live.filter(e=>e.ev==="GOL_LOCAL").length;$("aNum").textContent=live.filter(e=>e.ev==="GOL_VISITA").length;
+  const lbl={GOL_LOCAL:"⚽ Gol "+match.hn,GOL_VISITA:"⚽ Gol "+match.an,JUGADA:"⭐ Jugada",INICIO:"▶ Inicio",FIN:"■ Fin"};
+  $("log").innerHTML=[...match.events].reverse().map(e=>`<li class="${e.undone?"undone":""}"><span>${lbl[e.ev]||e.ev}</span><span class="t">${new Date(e.t).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"})}</span></li>`).join("");
+}
+addEventListener("online",flush); setInterval(flush,15000);
+show(); flush();
+</script>
+</body>
+</html>
