@@ -48,12 +48,18 @@ small{color:var(--mute);font-size:12px;line-height:1.5;display:block;margin-top:
 
 <!-- CONFIG (once) -->
 <section id="cfg" class="card hide">
-  <b>Configuración (solo una vez)</b>
+  <b>Configuración</b>
   <label>Pega el enlace "pre-rellenado" de tu Google Form</label>
   <textarea id="prefill" placeholder="https://docs.google.com/forms/d/e/.../viewform?usp=pp_url&entry.123=MATCH&..."></textarea>
   <small>En el formulario usa estos valores de ejemplo: MATCH, EVENT, TAPID, TIME.</small>
+  <small id="cfgNow"></small>
   <div style="height:10px"></div>
   <button class="btn" id="saveCfg">Guardar</button>
+  <div style="height:8px"></div>
+  <div class="row">
+    <button class="btn ghost" id="backCfg">← Volver</button>
+    <button class="btn ghost" id="resetCfg">Restablecer</button>
+  </div>
 </section>
 
 <!-- MATCH SETUP -->
@@ -108,12 +114,26 @@ function parsePrefill(url){
   if(Object.keys(ids).length<4) return null;
   return {action:`https://docs.google.com/forms/d/e/${m[1]}/formResponse`,ids};
 }
+let cfgOpen=false;
 function show(){
-  $("cfg").classList.toggle("hide",!!cfg); $("setup").classList.toggle("hide",!cfg||!!match); $("live").classList.toggle("hide",!cfg||!match);
-  if(match) render(); net();
+  const onCfg=cfgOpen||!cfg;
+  $("cfg").classList.toggle("hide",!onCfg);
+  $("setup").classList.toggle("hide",onCfg||!!match);
+  $("live").classList.toggle("hide",onCfg||!match);
+  $("backCfg").classList.toggle("hide",!cfg);
+  const isDef=cfg&&cfg.action===DEFAULT_CFG.action;
+  $("cfgNow").textContent=!cfg?"Sin formulario configurado":isDef?"Formulario actual: RSM Logger ✓":"Formulario personalizado (…"+cfg.action.split("/e/")[1].split("/")[0].slice(-8)+")";
+  if(match&&!onCfg) render(); net();
 }
-$("saveCfg").onclick=()=>{const c=parsePrefill($("prefill").value.trim()); if(!c){alert("No encuentro MATCH, EVENT, TAPID y TIME en el enlace. Revisa el pre-rellenado.");return} cfg=c;store.set("rsm_cfg",cfg);show()};
-$("openCfg").onclick=()=>{cfg=null;show()};
+$("saveCfg").onclick=()=>{
+  const v=$("prefill").value.trim();
+  if(!v){cfgOpen=false;show();return}                       // nothing pasted: keep current
+  const c=parsePrefill(v); if(!c){alert("No encuentro MATCH, EVENT, TAPID y TIME en el enlace. Revisa el pre-rellenado.");return}
+  cfg=c;store.set("rsm_cfg",cfg);$("prefill").value="";cfgOpen=false;show();flush();
+};
+$("backCfg").onclick=()=>{$("prefill").value="";cfgOpen=false;show()};
+$("resetCfg").onclick=()=>{if(!confirm("¿Volver al formulario RSM Logger original?"))return;cfg=DEFAULT_CFG;store.set("rsm_cfg",null);$("prefill").value="";cfgOpen=false;show();flush()};
+$("openCfg").onclick=()=>{cfgOpen=true;show()};
 $("start").onclick=()=>{
   const h=$("home").value,a=$("away").value; if(h===a){alert("Elige dos equipos distintos");return}
   const [y,mo,d]=$("date").value.split("-"); const key=`${h}_vs_${a}_${mo}${d}${y.slice(2)}`;
