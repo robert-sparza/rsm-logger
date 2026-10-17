@@ -1,0 +1,11 @@
+model:
+  # Phase 1: stock COCO weights (auto-downloaded on first run).
+  #   yolo11s.pt = faster, yolo11m.pt = good balance on an RTX 3060, yolo11l.pt = slower/better
+  # Phase 2: replace with your fine-tuned football model, e.g. runs/train/football/weights/best.pt,
+  # and update the class ids below to match its data.yaml.
+  weights: yolo11m.pt
+  imgsz: 1280            # small, far-away players need high resolution; try 1920 for 4K footage
+  conf: 0.25
+  device: 0              # GPU 0; use "cpu" to test without CUDA
+  player_class_ids: [0]  # COCO "person"
+  ball_class_ids: [32]   # COCO "sports ball"

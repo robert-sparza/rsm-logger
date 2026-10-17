@@ -1,0 +1,94 @@
+"""Analyze a recorded match.
+
+Usage:
+    python scripts/analyze.py data/videos/match.mp4 --calib runs/calib.json --out runs/match1
+
+Writes to --out:
+    tracks.csv            every detection per frame (pixels + pitch metres + team)
+    annotated.mp4         video with team-coloured players, ball marker and minimap
+    player_stats.csv      distance, top speed per track
+    heatmap_team*.png     where each team spent time
+    ball_path.png         ball trajectory
+    passes.csv / passes_team*.png   inferred passes and turnovers
+    summary.json          possession share, pass counts, team width/depth
+"""
+import argparse
+import sys
+import time
+from pathlib import Path
+
+import cv2
+import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from soccer_analyzer.pipeline import MatchPipeline  # noqa: E402
+from soccer_analyzer.pitch import Homography  # noqa: E402
+from soccer_analyzer.report import build_report  # noqa: E402
+from soccer_analyzer.tracking import Tracker, read_frames  # noqa: E402
+from soccer_analyzer import viz  # noqa: E402
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def load_config(path: Path) -> dict:
+    return yaml.safe_load(path.read_text()) if path.exists() else {}
+
+
+def make_tracker(cfg: dict) -> Tracker:
+    m = cfg.get("model", {})
+    return Tracker(weights=m.get("weights", "yolo11m.pt"), imgsz=m.get("imgsz", 1280),
+                   conf=m.get("conf", 0.25), player_ids=m.get("player_class_ids", [0]),
+                   ball_ids=m.get("ball_class_ids", [32]), device=m.get("device"))
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("source")
+    ap.add_argument("--calib", help="homography json from calibrate.py")
+    ap.add_argument("--out", default="runs/latest")
+    ap.add_argument("--config", default=str(ROOT / "config.yaml"))
+    ap.add_argument("--stride", type=int, default=1, help="process every Nth frame (2 = twice as fast)")
+    ap.add_argument("--max-seconds", type=float, help="stop after this much video (for quick tests)")
+    ap.add_argument("--no-video", action="store_true", help="skip writing annotated.mp4")
+    args = ap.parse_args()
+
+    cfg = load_config(Path(args.config))
+    hom = Homography.load(args.calib) if args.calib else None
+    if hom is None:
+        print("No --calib given: tracking only, no pitch maps. Run scripts/calibrate.py first for full analysis.")
+    pipe = MatchPipeline(make_tracker(cfg), hom)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+
+    cap = cv2.VideoCapture(args.source)
+    fps = (cap.get(cv2.CAP_PROP_FPS) or 30) / args.stride
+    cap.release()
+    writer = None
+    t0 = time.time()
+
+    for idx, t, frame in read_frames(args.source, args.stride):
+        if args.max_seconds and t > args.max_seconds:
+            break
+        dets = pipe.step(idx, t, frame)
+        if not args.no_video:
+            vis = viz.annotate_frame(frame, dets, pipe.team_map(), pipe.team_colors)
+            if hom is not None:
+                pts = [(r["x"], r["y"], r["team"], r["cls"] == "ball") for r in pipe.rows if r["frame"] == idx]
+                vis = viz.paste_minimap(vis, viz.minimap(hom.pitch, pts, pipe.team_colors))
+            if writer is None:
+                h, w = vis.shape[:2]
+                writer = cv2.VideoWriter(str(out / "annotated.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
+            writer.write(vis)
+        if idx % (100 * args.stride) == 0:
+            print(f"  t={t:7.1f}s  frame={idx}  {idx / args.stride / max(time.time() - t0, 1e-6):.1f} fps")
+
+    if writer:
+        writer.release()
+    df = pipe.save(out)
+    print(f"Tracked {len(df)} detections in {time.time() - t0:.0f}s -> {out / 'tracks.csv'}")
+    summary = build_report(df, out, hom.pitch if hom else None)
+    print(yaml.safe_dump(summary, sort_keys=False))
+
+
+if __name__ == "__main__":
+    main()
