@@ -1,0 +1,16 @@
+# BoT-SORT for footage where the camera pans/zooms (e.g. XbotGo auto-tracking).
+# Global motion compensation estimates how the whole image moved between frames,
+# so a camera pan is not mistaken for every player moving -> far fewer new IDs.
+# Slower than ByteTrack. Enable in config.yaml: tracker: trackers/botsort_moving_camera.yaml
+tracker_type: botsort
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.4
+track_buffer: 90
+match_thresh: 0.8
+fuse_score: True
+gmc_method: sparseOptFlow
+proximity_thresh: 0.5
+appearance_thresh: 0.8
+with_reid: False
+model: auto

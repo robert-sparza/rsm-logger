@@ -10,3 +10,4 @@ model:
   player_class_ids: [0]  # COCO "person"
   ball_class_ids: [32]   # COCO "sports ball"
   tracker: trackers/bytetrack_soccer.yaml  # longer memory so IDs survive occlusions
+  # tracker: trackers/botsort_moving_camera.yaml  # use this for auto-tracking / zooming footage
