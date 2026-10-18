@@ -19,7 +19,7 @@ from soccer_analyzer import viz  # noqa: E402
 from soccer_analyzer.pipeline import MatchPipeline  # noqa: E402
 from soccer_analyzer.pitch import Homography  # noqa: E402
 from soccer_analyzer.report import build_report  # noqa: E402
-from soccer_analyzer.tracking import read_frames  # noqa: E402
+from soccer_analyzer.tracking import LiveStream  # noqa: E402
 
 
 def main():
@@ -36,31 +36,26 @@ def main():
     pipe = MatchPipeline(make_tracker(cfg), hom)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    raw = None
+    stream = LiveStream(args.source, str(out / "raw.mp4") if args.record else None)
     t_last, fps = time.time(), 0.0
 
-    for idx, _, frame in read_frames(args.source):
-        t = time.time()
-        if raw is None and args.record:
-            h, w = frame.shape[:2]
-            raw = cv2.VideoWriter(str(out / "raw.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), 30, (w, h))
-        if raw is not None:
-            raw.write(frame)
+    # idx counts stream frames, so skipped frames leave gaps; t is seconds since start.
+    for idx, t, frame in stream:
         dets = pipe.step(idx, t, frame)
         vis = viz.annotate_frame(frame, dets, pipe.team_map(), pipe.team_colors, pipe.jersey_colors)
         if hom is not None:
             pts = [(r["x"], r["y"], r["team"], r["cls"] == "ball") for r in pipe.rows if r["frame"] == idx]
             vis = viz.paste_minimap(vis, viz.minimap(hom.pitch, pts, pipe.team_colors))
-        fps = 0.9 * fps + 0.1 / max(t - t_last, 1e-6)
-        t_last = t
+        now = time.time()
+        fps = 0.9 * fps + 0.1 / max(now - t_last, 1e-6)
+        t_last = now
         cv2.putText(vis, f"{fps:4.1f} fps", (vis.shape[1] - 160, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
         cv2.imshow("soccer analyzer - live", vis)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
 
+    stream.close()
     cv2.destroyAllWindows()
-    if raw is not None:
-        raw.release()
     df = pipe.save(out)
     if not df.empty:
         print(build_report(df, out, hom.pitch if hom else None))

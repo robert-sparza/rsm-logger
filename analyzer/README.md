@@ -55,6 +55,9 @@ Output in `runs/match1/`: `annotated.mp4`, `tracks.csv`, `player_stats.csv`,
 
 ## 3. Live mode (RTMP from the camera)
 
+Any phone app that can stream RTMP works: the XbotGo app, or the free **Larix Broadcaster**
+(Android and iPhone) for a plain phone on a tripod. Recorded phone videos also work with `analyze.py`.
+
 1. Download **MediaMTX** (github.com/bluenviron/mediamtx/releases, the `windows_amd64.zip`),
    unzip, and run `mediamtx.exe`. It listens for RTMP on port 1935.
 2. Allow port 1935 in Windows Firewall. Find the PC's local IP with `ipconfig`.
@@ -62,7 +65,10 @@ Output in `runs/match1/`: `annotated.mp4`, `tracks.csv`, `player_stats.csv`,
    The phone and the PC must be on the same network. At a field, a phone hotspot that both join is enough.
 4. `python scripts\live.py rtmp://localhost:1935/live/falcon --calib runs\calib.json --record`
 
-`--record` saves the raw stream too, so you can re-run the full offline analysis later.
+`--record` saves every frame of the raw stream, so you can re-run the full offline analysis later.
+The live view always analyzes the newest frame. The PC analyzes about 16 frames per second while the phone
+sends 30, so the view skips frames rather than falling behind the game. `live.py` waits up to
+5 minutes for the phone to start streaming, and reconnects if the stream drops for up to 30 seconds.
 You can open the stream in VLC at the same URL to check it before running the analyzer.
 
 ## 4. Camera tips (these matter more than the code)
