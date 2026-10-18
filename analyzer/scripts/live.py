@@ -47,13 +47,13 @@ def main():
         if raw is not None:
             raw.write(frame)
         dets = pipe.step(idx, t, frame)
-        vis = viz.annotate_frame(frame, dets, pipe.team_map(), pipe.team_colors)
+        vis = viz.annotate_frame(frame, dets, pipe.team_map(), pipe.team_colors, pipe.jersey_colors)
         if hom is not None:
             pts = [(r["x"], r["y"], r["team"], r["cls"] == "ball") for r in pipe.rows if r["frame"] == idx]
             vis = viz.paste_minimap(vis, viz.minimap(hom.pitch, pts, pipe.team_colors))
         fps = 0.9 * fps + 0.1 / max(t - t_last, 1e-6)
         t_last = t
-        cv2.putText(vis, f"{fps:4.1f} fps", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv2.putText(vis, f"{fps:4.1f} fps", (vis.shape[1] - 160, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
         cv2.imshow("soccer analyzer - live", vis)
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break

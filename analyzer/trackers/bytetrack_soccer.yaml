@@ -1,0 +1,8 @@
+# ByteTrack tuned for amateur soccer footage (based on Ultralytics' bytetrack.yaml).
+tracker_type: bytetrack
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.4   # stricter than default (0.25): fewer junk tracks from half-visible people
+track_buffer: 90        # keep lost tracks ~3 s at 30 fps (default 30) so players survive occlusions
+match_thresh: 0.8
+fuse_score: True

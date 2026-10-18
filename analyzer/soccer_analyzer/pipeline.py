@@ -14,19 +14,24 @@ from .viz import TEAM_FALLBACK
 
 class MatchPipeline:
     def __init__(self, tracker: Tracker, homography: Homography | None,
-                 team_warmup_frames: int = 50, color_every: int = 3):
+                 team_warmup_frames: int = 50, color_every: int = 3, pitch_margin: float = 3.0):
         self.tracker = tracker
         self.hom = homography
         self.pitch = homography.pitch if homography else Pitch()
         self.teams = TeamClassifier()
         self.team_warmup_frames = team_warmup_frames
         self.color_every = color_every
+        self.pitch_margin = pitch_margin
         self.rows: list[dict] = []
         self._n = 0
 
     @property
     def team_colors(self):
-        return self.teams.team_colors_bgr() if self.teams.fitted else TEAM_FALLBACK[:2]
+        return TEAM_FALLBACK[:2]
+
+    @property
+    def jersey_colors(self):
+        return self.teams.team_colors_bgr() if self.teams.fitted else None
 
     def step(self, frame_idx: int, t: float, frame: np.ndarray) -> list[Detection]:
         dets = self.tracker.step(frame)
@@ -36,6 +41,10 @@ class MatchPipeline:
             # Ball "foot" is where it would touch the ground; fine for ground balls,
             # wrong for balls in the air (needs height estimation - later phase).
             xy = self.hom.to_pitch(feet)
+            # Spectators, subs and people on neighbouring fields are not players.
+            keep = self.hom.on_pitch(xy, self.pitch_margin) | np.array([d.cls == "ball" for d in dets])
+            dets = [d for d, k in zip(dets, keep) if k]
+            feet, xy = feet[keep], xy[keep]
         else:
             xy = np.full((len(dets), 2), np.nan, np.float32)
 

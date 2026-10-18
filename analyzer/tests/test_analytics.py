@@ -70,3 +70,15 @@ def test_report_writes_outputs(tmp_path):
     assert (tmp_path / "ball_path.png").exists()
     assert summary["passes"] == {"team0": 1}
     assert summary["turnovers"] == 1
+
+
+def test_on_pitch_filters_spectators(tmp_path):
+    pitch = Pitch(length=50, width=30, circle_radius=6)
+    pts = np.array([[0, 0], [50, 0], [50, 30], [0, 30]], np.float32)
+    hom = Homography.fit(pts * 10, pts, pitch)            # 10 px per metre
+    mask = hom.on_pitch(np.array([[25, 15], [-1, 5], [25, -8], [60, 15]]), margin=3)
+    assert mask.tolist() == [True, True, False, False]
+    hom.save(tmp_path / "c.json")
+    loaded = Homography.load(tmp_path / "c.json")
+    assert loaded.pitch == pitch
+    assert loaded.pitch.landmarks()["center_circle_top"] == (25, 9)

@@ -7,7 +7,7 @@ pitch (0..width).
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import cv2
@@ -18,12 +18,20 @@ import numpy as np
 class Pitch:
     length: float = 105.0
     width: float = 68.0
+    # Markings default to FIFA 11-a-side sizes; small-sided pitches differ (measure yours).
+    circle_radius: float = 9.15
+    box_depth: float = 16.5
+    box_width: float = 40.32
+    goal_area_depth: float = 5.5
+    goal_area_width: float = 18.32
+    penalty_spot: float = 11.0
 
     def landmarks(self) -> dict[str, tuple[float, float]]:
         """Named points that are easy to click on a frame."""
         L, W = self.length, self.width
-        pa_d, pa_w = 16.5, 40.32      # penalty area depth / width
-        ga_d, ga_w = 5.5, 18.32       # goal area depth / width
+        pa_d, pa_w = self.box_depth, self.box_width
+        ga_d, ga_w = self.goal_area_depth, self.goal_area_width
+        r, ps = self.circle_radius, self.penalty_spot
         cy = W / 2
         return {
             "corner_top_left": (0, 0),
@@ -33,22 +41,22 @@ class Pitch:
             "halfway_top": (L / 2, 0),
             "halfway_bottom": (L / 2, W),
             "center_spot": (L / 2, cy),
-            "center_circle_top": (L / 2, cy - 9.15),
-            "center_circle_bottom": (L / 2, cy + 9.15),
+            "center_circle_top": (L / 2, cy - r),
+            "center_circle_bottom": (L / 2, cy + r),
             "left_box_top_line": (0, cy - pa_w / 2),
             "left_box_top_corner": (pa_d, cy - pa_w / 2),
             "left_box_bottom_corner": (pa_d, cy + pa_w / 2),
             "left_box_bottom_line": (0, cy + pa_w / 2),
             "left_6yd_top_corner": (ga_d, cy - ga_w / 2),
             "left_6yd_bottom_corner": (ga_d, cy + ga_w / 2),
-            "left_penalty_spot": (11, cy),
+            "left_penalty_spot": (ps, cy),
             "right_box_top_line": (L, cy - pa_w / 2),
             "right_box_top_corner": (L - pa_d, cy - pa_w / 2),
             "right_box_bottom_corner": (L - pa_d, cy + pa_w / 2),
             "right_box_bottom_line": (L, cy + pa_w / 2),
             "right_6yd_top_corner": (L - ga_d, cy - ga_w / 2),
             "right_6yd_bottom_corner": (L - ga_d, cy + ga_w / 2),
-            "right_penalty_spot": (L - 11, cy),
+            "right_penalty_spot": (L - ps, cy),
         }
 
 
@@ -81,10 +89,16 @@ class Homography:
             return np.empty((0, 2), dtype=np.float32)
         return cv2.perspectiveTransform(pts, np.linalg.inv(self.H)).reshape(-1, 2)
 
+    def on_pitch(self, xy: np.ndarray, margin: float = 3.0) -> np.ndarray:
+        """Boolean mask: which pitch positions lie inside the pitch plus `margin` metres."""
+        xy = np.asarray(xy).reshape(-1, 2)
+        return ((xy[:, 0] >= -margin) & (xy[:, 0] <= self.pitch.length + margin)
+                & (xy[:, 1] >= -margin) & (xy[:, 1] <= self.pitch.width + margin))
+
     def save(self, path: str | Path) -> None:
         Path(path).write_text(json.dumps({
             "H": self.H.tolist(),
-            "pitch": {"length": self.pitch.length, "width": self.pitch.width},
+            "pitch": asdict(self.pitch),
         }, indent=2))
 
     @classmethod

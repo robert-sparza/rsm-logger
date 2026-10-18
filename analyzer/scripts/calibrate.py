@@ -3,6 +3,11 @@
 Usage:
     python scripts/calibrate.py data/videos/match.mp4 --out runs/calib.json [--at 30]
 
+The first 7 landmarks (corners, halfway line ends, centre spot) depend only on
+--length/--width. The others also need the real size of the markings on small
+pitches (--circle-radius, --box-depth, --box-width, --penalty-spot, --goal-area-*); if you don't
+know them, skip those landmarks with "s".
+
 For each landmark name shown at the top of the window:
     left-click  = place the point
     s           = skip (landmark not visible)
@@ -40,9 +45,17 @@ def main():
     ap.add_argument("--at", type=float, default=5.0, help="seconds into the video to grab the frame")
     ap.add_argument("--length", type=float, default=105.0, help="pitch length in metres")
     ap.add_argument("--width", type=float, default=68.0, help="pitch width in metres")
+    ap.add_argument("--circle-radius", type=float, default=9.15, help="centre circle radius (m)")
+    ap.add_argument("--box-depth", type=float, default=16.5, help="penalty area depth from goal line (m)")
+    ap.add_argument("--box-width", type=float, default=40.32, help="penalty area width (m)")
+    ap.add_argument("--penalty-spot", type=float, default=11.0, help="penalty spot distance from goal line (m)")
+    ap.add_argument("--goal-area-depth", type=float, default=5.5, help="goal area (6-yard box) depth (m)")
+    ap.add_argument("--goal-area-width", type=float, default=18.32, help="goal area (6-yard box) width (m)")
     args = ap.parse_args()
 
-    pitch = Pitch(args.length, args.width)
+    pitch = Pitch(args.length, args.width, circle_radius=args.circle_radius, box_depth=args.box_depth,
+                  box_width=args.box_width, penalty_spot=args.penalty_spot,
+                  goal_area_depth=args.goal_area_depth, goal_area_width=args.goal_area_width)
     frame = grab_frame(args.source, args.at)
     names = list(pitch.landmarks().items())
     img_pts, pitch_pts, i = [], [], 0

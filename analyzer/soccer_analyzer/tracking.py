@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterator
 
 import cv2
@@ -10,6 +11,7 @@ import numpy as np
 # COCO class ids used by the stock YOLO weights. A fine-tuned football model
 # (see README, Phase 2) will have its own ids; set them in config.yaml.
 COCO_PERSON, COCO_BALL = 0, 32
+DEFAULT_TRACKER = str(Path(__file__).resolve().parents[1] / "trackers" / "bytetrack_soccer.yaml")
 
 
 @dataclass
@@ -28,14 +30,15 @@ class Detection:
 
 class Tracker:
     def __init__(self, weights: str = "yolo11m.pt", imgsz: int = 1280, conf: float = 0.25,
-                 player_ids=(COCO_PERSON,), ball_ids=(COCO_BALL,), device: str | int | None = None):
+                 player_ids=(COCO_PERSON,), ball_ids=(COCO_BALL,), device: str | int | None = None,
+                 tracker: str = DEFAULT_TRACKER):
         from ultralytics import YOLO  # imported lazily so tests don't need it
         self.model = YOLO(weights)
-        self.imgsz, self.conf, self.device = imgsz, conf, device
+        self.imgsz, self.conf, self.device, self.tracker = imgsz, conf, device, tracker
         self.player_ids, self.ball_ids = set(player_ids), set(ball_ids)
 
     def step(self, frame: np.ndarray) -> list[Detection]:
-        res = self.model.track(frame, persist=True, tracker="bytetrack.yaml", imgsz=self.imgsz,
+        res = self.model.track(frame, persist=True, tracker=self.tracker, imgsz=self.imgsz,
                                conf=self.conf, device=self.device, verbose=False,
                                classes=sorted(self.player_ids | self.ball_ids))[0]
         out: list[Detection] = []

@@ -8,7 +8,7 @@ import numpy as np
 
 from .pitch import Pitch
 
-TEAM_FALLBACK = [(230, 120, 40), (40, 40, 220), (200, 200, 200)]  # BGR
+TEAM_FALLBACK = [(255, 255, 0), (255, 0, 255), (160, 160, 160)]  # BGR: cyan, magenta, grey (unknown)
 BALL_COLOR = (0, 230, 255)
 
 
@@ -21,10 +21,11 @@ def draw_pitch(pitch: Pitch, scale: float = 6.0, margin: int = 10) -> np.ndarray
     white, L, Wd = (235, 235, 235), pitch.length, pitch.width
     cv2.rectangle(img, p(0, 0), p(L, Wd), white, 2)
     cv2.line(img, p(L / 2, 0), p(L / 2, Wd), white, 2)
-    cv2.circle(img, p(L / 2, Wd / 2), int(9.15 * scale), white, 2)
+    cv2.circle(img, p(L / 2, Wd / 2), int(pitch.circle_radius * scale), white, 2)
+    bw, gw = pitch.box_width / 2, pitch.goal_area_width / 2
     for x0, sgn in ((0, 1), (L, -1)):
-        cv2.rectangle(img, p(x0, Wd / 2 - 20.16), p(x0 + sgn * 16.5, Wd / 2 + 20.16), white, 2)
-        cv2.rectangle(img, p(x0, Wd / 2 - 9.16), p(x0 + sgn * 5.5, Wd / 2 + 9.16), white, 2)
+        cv2.rectangle(img, p(x0, Wd / 2 - bw), p(x0 + sgn * pitch.box_depth, Wd / 2 + bw), white, 2)
+        cv2.rectangle(img, p(x0, Wd / 2 - gw), p(x0 + sgn * pitch.goal_area_depth, Wd / 2 + gw), white, 2)
     return img
 
 
@@ -32,8 +33,16 @@ def to_canvas(xy, scale: float = 6.0, margin: int = 10) -> tuple[int, int]:
     return int(margin + xy[0] * scale), int(margin + xy[1] * scale)
 
 
-def annotate_frame(frame, dets, teams: dict[int, int], team_colors) -> np.ndarray:
+def annotate_frame(frame, dets, teams: dict[int, int], team_colors, jersey_colors=None) -> np.ndarray:
     out = frame.copy()
+    if jersey_colors:
+        # Legend: drawing colour -> the jersey colour the classifier learned for that team.
+        for i, (draw, jersey) in enumerate(zip(team_colors, jersey_colors)):
+            y = 30 + 34 * i
+            cv2.rectangle(out, (20, y - 20), (48, y + 6), draw, -1)
+            cv2.rectangle(out, (54, y - 20), (82, y + 6), jersey, -1)
+            cv2.rectangle(out, (54, y - 20), (82, y + 6), (255, 255, 255), 1)
+            cv2.putText(out, f"Team {i}", (90, y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
     for d in dets:
         x1, y1, x2, y2 = (int(v) for v in d.box)
         if d.cls == "ball":
@@ -42,8 +51,8 @@ def annotate_frame(frame, dets, teams: dict[int, int], team_colors) -> np.ndarra
             continue
         team = teams.get(d.track_id, -1)
         color = team_colors[team] if 0 <= team < len(team_colors) else TEAM_FALLBACK[2]
-        cv2.ellipse(out, (int(d.foot[0]), int(d.foot[1])), (max(8, (x2 - x1) // 2), 6), 0, -45, 235, color, 2)
-        cv2.putText(out, str(d.track_id), (x1, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA)
+        cv2.ellipse(out, (int(d.foot[0]), int(d.foot[1])), (max(8, (x2 - x1) // 2), 6), 0, -45, 235, color, 3)
+        cv2.putText(out, str(d.track_id), (x1, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2, cv2.LINE_AA)
     return out
 
 
@@ -82,10 +91,11 @@ def _mpl_pitch(ax, pitch: Pitch):
     kw = dict(fill=False, ec="white", lw=1.5)
     ax.add_patch(Rectangle((0, 0), L, W, **kw))
     ax.plot([L / 2, L / 2], [0, W], color="white", lw=1.5)
-    ax.add_patch(Circle((L / 2, W / 2), 9.15, **kw))
+    ax.add_patch(Circle((L / 2, W / 2), pitch.circle_radius, **kw))
+    bd, bw, gd, gw = pitch.box_depth, pitch.box_width, pitch.goal_area_depth, pitch.goal_area_width
     for x0, s in ((0, 1), (L, -1)):
-        ax.add_patch(Rectangle((x0 if s > 0 else x0 - 16.5, W / 2 - 20.16), 16.5, 40.32, **kw))
-        ax.add_patch(Rectangle((x0 if s > 0 else x0 - 5.5, W / 2 - 9.16), 5.5, 18.32, **kw))
+        ax.add_patch(Rectangle((x0 if s > 0 else x0 - bd, W / 2 - bw / 2), bd, bw, **kw))
+        ax.add_patch(Rectangle((x0 if s > 0 else x0 - gd, W / 2 - gw / 2), gd, gw, **kw))
     ax.set_xlim(-3, L + 3)
     ax.set_ylim(W + 3, -3)
     ax.set_aspect("equal")

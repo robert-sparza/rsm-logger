@@ -9,3 +9,4 @@ model:
   device: 0              # GPU 0; use "cpu" to test without CUDA
   player_class_ids: [0]  # COCO "person"
   ball_class_ids: [32]   # COCO "sports ball"
+  tracker: trackers/bytetrack_soccer.yaml  # longer memory so IDs survive occlusions

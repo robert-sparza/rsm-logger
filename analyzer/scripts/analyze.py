@@ -38,7 +38,8 @@ def make_tracker(cfg: dict) -> Tracker:
     m = cfg.get("model", {})
     return Tracker(weights=m.get("weights", "yolo11m.pt"), imgsz=m.get("imgsz", 1280),
                    conf=m.get("conf", 0.25), player_ids=m.get("player_class_ids", [0]),
-                   ball_ids=m.get("ball_class_ids", [32]), device=m.get("device"))
+                   ball_ids=m.get("ball_class_ids", [32]), device=m.get("device"),
+                   tracker=str(ROOT / m.get("tracker", "trackers/bytetrack_soccer.yaml")))
 
 
 def main():
@@ -71,7 +72,7 @@ def main():
             break
         dets = pipe.step(idx, t, frame)
         if not args.no_video:
-            vis = viz.annotate_frame(frame, dets, pipe.team_map(), pipe.team_colors)
+            vis = viz.annotate_frame(frame, dets, pipe.team_map(), pipe.team_colors, pipe.jersey_colors)
             if hom is not None:
                 pts = [(r["x"], r["y"], r["team"], r["cls"] == "ball") for r in pipe.rows if r["frame"] == idx]
                 vis = viz.paste_minimap(vis, viz.minimap(hom.pitch, pts, pipe.team_colors))
