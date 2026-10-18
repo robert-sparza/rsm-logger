@@ -2,6 +2,12 @@
 REM One-click setup for Windows: double-click this file, or run it from a terminal.
 REM Creates .venv, installs PyTorch with CUDA (NVIDIA GPU) and the analyzer's requirements.
 cd /d "%~dp0"
+if not exist requirements.txt (
+  echo [X] This file must be inside the analyzer folder, next to requirements.txt.
+  echo     Download the whole project: https://github.com/robert-sparza/rsm-logger/archive/refs/heads/claude/soccer-game-analyzer-cfe1q0.zip
+  echo     unzip it, open the "analyzer" folder inside, and run setup_windows.bat from there.
+  goto :fail
+)
 
 set PY=
 where py >nul 2>nul && py -3.12 --version >nul 2>nul && set "PY=py -3.12"
