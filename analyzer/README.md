@@ -2,7 +2,7 @@
 
 Turns footage from a fixed sideline camera (XbotGo Falcon on a 3–3.5 m tripod) into
 player tracks, team heatmaps, ball paths, possession and pass maps. Runs on the
-Omen PC (RTX 3060). It also has a live mode that reads the camera's RTMP stream.
+Omen PC (RTX 3060 Ti, 8 GB). It also has a live mode that reads the camera's RTMP stream.
 
 ```
 video / RTMP ──► YOLO detection ──► ByteTrack IDs ──► team split (jersey colour)
@@ -12,23 +12,24 @@ video / RTMP ──► YOLO detection ──► ByteTrack IDs ──► team spl
 
 ## 1. Setup on the PC (Windows, one time)
 
-1. Install **Python 3.11** (python.org, tick "Add to PATH"), **Git**, and an up-to-date **NVIDIA driver**.
-2. Get the code:
-   ```powershell
-   git clone https://github.com/robert-sparza/rsm-logger.git
+Tested target: Omen 25L, Ryzen 7 5700G, 16 GB RAM, **RTX 3060 Ti (8 GB)**.
+
+1. Install these three things:
+   - **Python 3.12** from python.org. In the installer, tick **"Add python.exe to PATH"**.
+     Newer Python versions may not have PyTorch builds yet.
+   - **Git** from git-scm.com.
+   - The latest **NVIDIA driver** (GeForce Experience or nvidia.com).
+2. Get the code. Open "Command Prompt" and run:
+   ```bat
+   git clone -b claude/soccer-game-analyzer-cfe1q0 https://github.com/robert-sparza/rsm-logger.git
    cd rsm-logger\analyzer
-   python -m venv .venv
-   .venv\Scripts\activate
    ```
-3. Install PyTorch **with CUDA** first, then the rest:
-   ```powershell
-   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
-   pip install -r requirements.txt
-   python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
-   ```
-   The last line must print `True NVIDIA GeForce RTX 3060`. If it prints `False`, analysis
-   still works on the CPU, just ~20× slower.
-4. Run the tests: `pytest -q tests`
+3. **Double-click `setup_windows.bat`**, or type `setup_windows.bat` in that window.
+   It creates `.venv`, installs PyTorch with CUDA (a download of about 3 GB), installs the
+   requirements, checks the GPU and runs the tests. At the end it must print
+   `GPU OK: NVIDIA GeForce RTX 3060 Ti`. If it shows an error, send the error lines to Claude.
+4. Every time you open a new terminal, activate the environment first: `.venv\Scripts\activate.bat`
+   (in PowerShell: `.venv\Scripts\Activate.ps1`; if PowerShell blocks scripts, use Command Prompt).
 
 ## 2. Analyze a recorded match (start here)
 
