@@ -156,3 +156,26 @@ def test_split_where_tracker_swapped_vest_and_non_vest_players():
     # A steady vest player is never split even though the vest is only seen half the time.
     steady = df.assign(vote=(rng.random(len(t)) < 0.5).astype(float))
     assert set(split_on_team_change(steady, bib.decide)) == {5}
+
+
+def test_cone_colours_are_not_the_ball():
+    from soccer_analyzer.ball import cone_colored
+    img = np.full((40, 120, 3), hsv_bgr(TURF_HSV), np.uint8)
+    cv2.ellipse(img, (20, 20), (10, 6), 0, 0, 360, hsv_bgr((12, 220, 230)), -1)    # orange cone
+    cv2.ellipse(img, (60, 20), (10, 6), 0, 0, 360, hsv_bgr((30, 200, 220)), -1)    # yellow cone
+    cv2.circle(img, (100, 20), 9, (235, 235, 235), -1)                             # white ball
+    cv2.circle(img, (100, 20), 3, (20, 20, 20), -1)
+    assert cone_colored(img, (8, 12, 32, 28)) and cone_colored(img, (48, 12, 72, 28))
+    assert not cone_colored(img, (90, 10, 110, 30))
+
+
+def test_flickering_static_spot_becomes_static():
+    sel = BallSelector(static_frames=30, gap_frames=50, memory_frames=10)
+    spare = Detection(-1, "ball", (500, 300, 510, 310), 0.9)
+    picks = []
+    for f in range(120):
+        cands = [(spare, True)] if f % 7 in (0, 1, 2) else []      # detected 3 frames out of 7
+        x = 100 + 4 * f
+        cands.append((Detection(-1, "ball", (x, 200, x + 10, 210), 0.3), True))
+        picks.append(sel.select(f, cands))
+    assert all(p.conf == 0.3 for p in picks[40:])

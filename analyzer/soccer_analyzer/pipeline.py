@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from .ball import BallSelector
+from .ball import BallSelector, cone_colored
 from .pitch import Homography, Pitch
 from .stitch import off_pitch_tracks, split_on_team_change, stitch_tracks
 from .teams import BibClassifier, TeamClassifier
@@ -19,7 +19,7 @@ class MatchPipeline:
     def __init__(self, tracker: Tracker, homography: Homography | None,
                  teams: TeamClassifier | BibClassifier | None = None,
                  team_warmup_frames: int = 50, color_every: int = 3, pitch_margin: float = 1.5,
-                 fps: float = 30.0):
+                 fps: float = 30.0, reject_cone_colours: bool = True):
         self.tracker = tracker
         self.hom = homography
         self.pitch = homography.pitch if homography else Pitch()
@@ -27,7 +27,8 @@ class MatchPipeline:
         self.team_warmup_frames = team_warmup_frames
         self.color_every = color_every
         self.pitch_margin = pitch_margin
-        self.ball = BallSelector(static_frames=int(3 * fps), gap_frames=int(0.5 * fps), memory_frames=int(fps))
+        self.ball = BallSelector(static_frames=int(3 * fps), gap_frames=int(5 * fps), memory_frames=int(fps))
+        self.reject_cone_colours = reject_cone_colours
         self.rows: list[dict] = []
         self._n = 0
 
@@ -53,7 +54,8 @@ class MatchPipeline:
             on_pitch = np.ones(len(dets), bool)
 
         # Spectators, subs, coaches and people on neighbouring fields are not players.
-        ball = self.ball.select(frame_idx, [(d, k) for d, k in zip(dets, on_pitch) if d.cls == "ball"])
+        ball = self.ball.select(frame_idx, [(d, k and not (self.reject_cone_colours and cone_colored(frame, d.box)))
+                                            for d, k in zip(dets, on_pitch) if d.cls == "ball"])
         keep = [(d.cls == "player" and k) or d is ball for d, k in zip(dets, on_pitch)]
         dets = [d for d, k in zip(dets, keep) if k]
         feet, xy = feet[keep], xy[keep]

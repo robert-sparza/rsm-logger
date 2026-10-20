@@ -2,15 +2,31 @@
 
 At training sessions there are cones, spare balls and balls behind the goals,
 and the stock detector reports several of them per frame. We drop candidates
-that are off the pitch or have not moved for a few seconds (cones, a ball at
-the coach's feet), then follow the candidate closest to where the ball was last
-seen.
+that are off the pitch, cone-coloured (vivid orange/yellow), or have sat in the
+same spot for a few seconds (a ball at the coach's feet), then follow the
+candidate closest to where the ball was last seen.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+import cv2
 import numpy as np
+
+
+def cone_colored(frame: np.ndarray, box, min_share: float = 0.12) -> bool:
+    """True if the box is mostly vivid orange/yellow/red like a training cone.
+
+    Measured on night footage: cones 20-43% vivid pixels, a white match ball 0%.
+    Turn off (config ball.reject_cone_colours) if you play with an orange or yellow ball.
+    """
+    x1, y1, x2, y2 = (int(v) for v in box)
+    crop = frame[max(y1, 0):y2, max(x1, 0):x2]
+    if crop.size == 0:
+        return False
+    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV).reshape(-1, 3)
+    vivid = (hsv[:, 1] >= 120) & (hsv[:, 2] >= 120) & ((hsv[:, 0] <= 40) | (hsv[:, 0] >= 165))
+    return bool(vivid.mean() >= min_share)
 
 
 @dataclass
@@ -22,9 +38,11 @@ class _StaticSpot:
 
 
 class BallSelector:
-    def __init__(self, static_frames: int = 90, radius_px: float = 12.0, gap_frames: int = 15,
+    def __init__(self, static_frames: int = 90, radius_px: float = 12.0, gap_frames: int = 150,
                  memory_frames: int = 30):
         self.static_frames = static_frames      # ~3 s at 30 fps without moving = not the ball in play
+        # Cones are detected on and off (confidence near the threshold), so a spot keeps its
+        # history through dropouts of up to gap_frames (~5 s) instead of resetting.
         self.radius_px = radius_px
         self.gap_frames = gap_frames
         self.memory_frames = memory_frames

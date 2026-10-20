@@ -50,7 +50,8 @@ def make_pipeline(cfg: dict, hom, video_fps: float, bib: str | None = None) -> M
     teams = BibClassifier(bib) if bib else TeamClassifier()
     print(f"Teams: {'bib colour ' + bib + ' = team 1' if bib else 'automatic (2 shirt colours)'}")
     return MatchPipeline(make_tracker(cfg), hom, teams=teams,
-                         pitch_margin=cfg.get("analysis", {}).get("pitch_margin", 1.5), fps=video_fps)
+                         pitch_margin=cfg.get("analysis", {}).get("pitch_margin", 1.5), fps=video_fps,
+                         reject_cone_colours=cfg.get("ball", {}).get("reject_cone_colours", True))
 
 
 def add_team_args(ap: argparse.ArgumentParser) -> None:

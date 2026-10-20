@@ -138,7 +138,9 @@ tests/          synthetic-data tests (no GPU needed)
 ## Known limitations (Phase 1)
 
 - The stock COCO "sports ball" class often misses a small, fast or far ball, and it detects cones as balls.
-  Candidates that don't move for 3 seconds, or that are off the pitch, are ignored, but passes and possession are still rough until Phase 2.
+  Vivid orange or yellow candidates (cones), candidates that sit still for 3 seconds even when detected on and off,
+  and candidates off the pitch are all ignored. If you play with an orange or yellow ball, set
+  `ball.reject_cone_colours: false`. Passes and possession stay rough until Phase 2 (a ball detector trained on your footage).
 - Track IDs can swap when players cross or overlap. After the run, broken tracks are joined: a track that
   starts within 2 s of another ending, at a spot the player could have reached, is the same player (never
   across teams). `annotated.mp4` is drawn after that, with the final IDs (1, 2, 3...) and teams. The live view

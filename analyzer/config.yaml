@@ -20,3 +20,6 @@ teams:
 
 analysis:
   pitch_margin: 1.5        # metres outside the lines still counted as on the pitch
+
+ball:
+  reject_cone_colours: true  # ignore vivid orange/yellow "balls" (training cones); set false for an orange/yellow ball
