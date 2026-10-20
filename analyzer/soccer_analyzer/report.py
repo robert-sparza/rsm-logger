@@ -15,7 +15,16 @@ def build_report(df: pd.DataFrame, out_dir: Path, pitch: Pitch | None = None) ->
     pitch = pitch or Pitch()
     out_dir.mkdir(parents=True, exist_ok=True)
     on_pitch = df.dropna(subset=["x", "y"])
-    summary: dict = {"frames": int(df.frame.nunique()), "players_tracked": int((df.cls == "player").groupby(df.track_id).any().sum())}
+    players = df[df.cls == "player"]
+    seen = players.groupby("track_id").t.agg(lambda s: s.max() - s.min())
+    summary: dict = {
+        "frames": int(df.frame.nunique()),
+        "players_tracked": int((seen >= 3).sum()),            # seen for at least 3 s
+        "short_fragments": int((seen < 3).sum()),             # bits the tracker couldn't join
+        "players_per_team": {f"team{k}": int(v) for k, v in
+                             players[players.track_id.isin(seen.index[seen >= 3])]
+                             .groupby("track_id").team.first().value_counts().sort_index().items()},
+    }
 
     if on_pitch.empty:
         summary["note"] = "No pitch coordinates - run calibrate.py first to get heatmaps and distances."

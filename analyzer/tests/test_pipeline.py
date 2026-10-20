@@ -124,3 +124,12 @@ def test_stitching_joins_broken_tracks_but_not_across_teams():
     root = stitch_tracks(df, teams={1: 0, 7: 1})
     assert root[7] == 7
     assert off_pitch_tracks(df, 28.5, 16.3) == {3}
+
+
+def test_coach_standing_on_touchline_is_not_a_player():
+    from soccer_analyzer.stitch import off_pitch_tracks
+    import pandas as pd
+    rows = [dict(t=f / 10, track_id=1, x=14 + 0.2 * np.sin(f / 7), y=16.2) for f in range(200)]     # coach on the line
+    rows += [dict(t=f / 10, track_id=2, x=10 + f * 0.05, y=15.8) for f in range(200)]              # winger running along it
+    rows += [dict(t=f / 10, track_id=3, x=0.3, y=8 + 0.3 * np.sin(f / 9)) for f in range(200)]     # keeper on the goal line
+    assert off_pitch_tracks(pd.DataFrame(rows), 28.5, 16.3) == {1}

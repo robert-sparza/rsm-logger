@@ -57,9 +57,20 @@ def stitch_tracks(players: pd.DataFrame, max_gap_s: float = 2.0, max_speed: floa
     return root
 
 
-def off_pitch_tracks(players: pd.DataFrame, length: float, width: float, tolerance_m: float = 0.3) -> set[int]:
-    """Tracks whose median position is outside the lines: coaches, subs, spectators."""
-    med = players.dropna(subset=["x", "y"]).groupby("track_id")[["x", "y"]].median()
+def off_pitch_tracks(players: pd.DataFrame, length: float, width: float, tolerance_m: float = 0.3,
+                     touchline_m: float = 1.0, still_m: float = 2.0, min_s: float = 5.0) -> set[int]:
+    """Not players: tracks whose median position is outside the lines (bench,
+    spectators), or who stand almost still on a touchline for a while (a coach
+    on the line). Goal lines are left alone so goalkeepers are kept."""
+    p = players.dropna(subset=["x", "y"])
+    g = p.groupby("track_id")
+    med = g[["x", "y"]].median()
     out = ((med.x < -tolerance_m) | (med.x > length + tolerance_m)
            | (med.y < -tolerance_m) | (med.y > width + tolerance_m))
-    return set(med.index[out])
+    on_touchline = (med.y < touchline_m) | (med.y > width - touchline_m)
+    # How far the person wanders: 90th percentile distance from their median spot.
+    spread = p.join(med, on="track_id", rsuffix="_m").assign(
+        d=lambda d: np.hypot(d.x - d.x_m, d.y - d.y_m)).groupby("track_id").d.quantile(0.9)
+    duration = g.t.max() - g.t.min()
+    coach = on_touchline & (spread < still_m) & (duration >= min_s)
+    return set(med.index[out | coach])

@@ -59,9 +59,11 @@ class MatchPipeline:
         feet, xy = feet[keep], xy[keep]
 
         for d, (px, py), (x, y) in zip(dets, feet, xy):
-            team = -1
+            team, bib = -1, np.nan
             if d.cls == "player" and frame_idx % self.color_every == 0:
                 feat = self.teams.feature(frame, d.box)
+                if isinstance(feat, float):
+                    bib = feat          # saved for checking/tuning the bib rule
                 if feat is not None:
                     if self.teams.fitted:
                         team = self.teams.vote(d.track_id, feat)
@@ -72,7 +74,7 @@ class MatchPipeline:
             bx1, by1, bx2, by2 = (float(v) for v in d.box)
             self.rows.append(dict(frame=frame_idx, t=t, track_id=d.track_id, cls=d.cls, team=team,
                                   conf=d.conf, px=float(px), py=float(py), x=float(x), y=float(y),
-                                  bx1=bx1, by1=by1, bx2=bx2, by2=by2))
+                                  bx1=bx1, by1=by1, bx2=bx2, by2=by2, bib=bib))
 
         if not self.teams.fitted and self._n >= self.team_warmup_frames and len(self.teams.samples) >= 20:
             self.teams.fit()
