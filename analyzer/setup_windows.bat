@@ -1,6 +1,7 @@
 @echo off
 REM One-click setup for Windows: double-click this file, or run it from a terminal.
 REM Creates .venv, installs PyTorch with CUDA (NVIDIA GPU) and the analyzer's requirements.
+REM --no-cache-dir: don't keep ~3 GB+ of downloaded wheels on C: after installing.
 cd /d "%~dp0"
 if not exist requirements.txt (
   echo [X] This file must be inside the analyzer folder, next to requirements.txt.
@@ -31,11 +32,11 @@ set "VPY=.venv\Scripts\python.exe"
 
 echo.
 echo Installing PyTorch with CUDA (about 3 GB, takes a while) ...
-"%VPY%" -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128 || goto :torchfail
+"%VPY%" -m pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cu128 || goto :torchfail
 
 echo.
 echo Installing analyzer requirements ...
-"%VPY%" -m pip install -r requirements.txt || goto :fail
+"%VPY%" -m pip install --no-cache-dir -r requirements.txt || goto :fail
 
 echo.
 "%VPY%" -c "import torch; ok=torch.cuda.is_available(); print('GPU OK:', torch.cuda.get_device_name(0)) if ok else print('[!] CUDA not available - update the NVIDIA driver (GeForce Experience / nvidia.com) and run this again')"
