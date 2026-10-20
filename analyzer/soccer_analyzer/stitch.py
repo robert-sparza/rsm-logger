@@ -8,6 +8,8 @@ position is outside the lines (coach on the touchline, bench, spectators).
 """
 from __future__ import annotations
 
+from collections import Counter
+
 import numpy as np
 import pandas as pd
 
@@ -74,3 +76,66 @@ def off_pitch_tracks(players: pd.DataFrame, length: float, width: float, toleran
     duration = g.t.max() - g.t.min()
     coach = on_touchline & (spread < still_m) & (duration >= min_s)
     return set(med.index[out | coach])
+
+
+def split_on_team_change(players: pd.DataFrame, decide, window_s: float = 3.0, min_segment_s: float = 4.0,
+                         first_new_id: int | None = None) -> pd.Series:
+    """New track ids where the tracker swapped two players of different teams.
+
+    When two players cross, the tracker sometimes swaps their IDs. If one wears
+    a bib and the other does not, the vote column of that track flips. Each
+    sample gets the team decided over a `window_s` window around it; runs
+    shorter than `min_segment_s` are absorbed by their neighbours; the track is
+    cut where the remaining runs change team. Returns new ids aligned with
+    `players` (unchanged ids where nothing was cut).
+    """
+    new_ids = players.track_id.copy()
+    next_id = first_new_id if first_new_id is not None else int(players.track_id.max()) + 1
+    for tid, tr in players.groupby("track_id"):
+        s = tr[tr.vote.notna()].sort_values("t")
+        if len(s) < 10 or s.t.iloc[-1] - s.t.iloc[0] < 2 * min_segment_s:
+            continue
+        t = s.t.to_numpy()
+        v = s.vote.to_numpy().astype(int)
+        ones = np.concatenate([[0], np.cumsum(v)])
+        lo = np.searchsorted(t, t - window_s / 2)
+        hi = np.searchsorted(t, t + window_s / 2, side="right")
+        labels = []
+        for a, b in zip(lo, hi):
+            n1 = ones[b] - ones[a]
+            labels.append(decide(Counter({0: (b - a) - n1, 1: n1})))
+        # Runs of equal label: [start_index, end_index, label]
+        runs = []
+        for i, lab in enumerate(labels):
+            if runs and runs[-1][2] == lab:
+                runs[-1][1] = i
+            else:
+                runs.append([i, i, lab])
+        # Absorb short runs (noise) into the previous run, or the next one at the start.
+        changed = True
+        while changed and len(runs) > 1:
+            changed = False
+            for k, (a, b, lab) in enumerate(runs):
+                if t[b] - t[a] < min_segment_s:
+                    if k > 0:
+                        runs[k - 1][1] = b
+                    else:
+                        runs[k + 1][0] = a
+                    runs.pop(k)
+                    changed = True
+                    break
+            merged = []
+            for r in runs:
+                if merged and merged[-1][2] == r[2]:
+                    merged[-1][1] = r[1]
+                else:
+                    merged.append(r)
+            runs = merged
+        if len(runs) < 2:
+            continue
+        cuts = [t[r[0]] for r in runs[1:]]          # start time of every run after the first
+        seg = np.searchsorted(cuts, tr.t.to_numpy(), side="right")
+        for k in range(1, len(runs)):
+            new_ids.loc[tr.index[seg == k]] = next_id
+            next_id += 1
+    return new_ids

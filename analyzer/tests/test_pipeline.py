@@ -133,3 +133,26 @@ def test_coach_standing_on_touchline_is_not_a_player():
     rows += [dict(t=f / 10, track_id=2, x=10 + f * 0.05, y=15.8) for f in range(200)]              # winger running along it
     rows += [dict(t=f / 10, track_id=3, x=0.3, y=8 + 0.3 * np.sin(f / 9)) for f in range(200)]     # keeper on the goal line
     assert off_pitch_tracks(pd.DataFrame(rows), 28.5, 16.3) == {1}
+
+
+def test_lawn_behind_far_side_player_is_not_a_vest():
+    lawn = (38, 140, 190)                       # lit park lawn behind the pitch, same hue as a neon vest
+    img = np.full((200, 100, 3), hsv_bgr(lawn), np.uint8)
+    cv2.rectangle(img, (34, 20), (66, 190), hsv_bgr(MAROON_HSV), -1)      # player fills the middle half of the box, as measured
+    assert BibClassifier("neon_yellow").feature(img, (20, 10, 80, 190)) == 0
+
+
+def test_split_where_tracker_swapped_vest_and_non_vest_players():
+    from soccer_analyzer.stitch import split_on_team_change
+    import pandas as pd
+    bib = BibClassifier("neon_yellow")
+    rng = np.random.default_rng(0)
+    t = np.arange(0, 30, 0.1)
+    # 0-15 s vest player (vest seen in half the samples), then the ID moves to a non-vest player.
+    vote = np.where(t < 15, rng.random(len(t)) < 0.5, rng.random(len(t)) < 0.02).astype(float)
+    df = pd.DataFrame(dict(t=t, track_id=5, vote=vote, x=10.0, y=5.0))
+    ids = split_on_team_change(df, bib.decide, first_new_id=100)
+    assert set(ids[t < 13]) == {5} and set(ids[t > 17]) == {100}
+    # A steady vest player is never split even though the vest is only seen half the time.
+    steady = df.assign(vote=(rng.random(len(t)) < 0.5).astype(float))
+    assert set(split_on_team_change(steady, bib.decide)) == {5}

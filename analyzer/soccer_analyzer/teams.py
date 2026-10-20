@@ -92,8 +92,12 @@ class TeamClassifier:
         assert self.kmeans is not None
         return int(self.kmeans.predict(color.reshape(1, -1))[0])
 
+    def sample_vote(self, color: np.ndarray) -> int:
+        """Team suggested by one sample."""
+        return self.predict(color)
+
     def vote(self, track_id: int, color: np.ndarray) -> int:
-        self.votes[track_id][self.predict(color)] += 1
+        self.votes[track_id][self.sample_vote(color)] += 1
         return self.team_of(track_id)
 
     def team_of(self, track_id: int) -> int:
@@ -113,20 +117,24 @@ class TeamClassifier:
 class BibClassifier:
     """Team 1 = wearing the bib, team 0 = everyone else. Needs no fitting."""
 
-    def __init__(self, color: str = "neon_yellow", min_fraction: float = 0.04, min_share: float = 0.2):
+    def __init__(self, color: str = "neon_yellow", min_fraction: float = 0.01, min_share: float = 0.25):
         if color not in BIB_COLORS:
             raise ValueError(f"Unknown bib colour {color!r}; choose from {sorted(BIB_COLORS)}")
         self.color = color
         self.lo, self.hi = BIB_COLORS[color]
+        # Tuned on real night footage: a vest wearer shows vest pixels in only ~50% of
+        # samples (back turned, arms, blur), so a track needs 25% of samples, not most.
         self.min_fraction = min_fraction    # share of torso pixels that must be bib-coloured
-        self.min_share = min_share          # share of a track's frames that must show the bib
+        self.min_share = min_share          # share of a track's samples that must show the bib
         self.votes: dict[int, Counter] = defaultdict(Counter)
         self.samples: list = []
 
     fitted = True
 
     def feature(self, frame: np.ndarray, box) -> float | None:
-        crop = _torso(frame, box, top=0.1, bottom=0.55, side=0.0)
+        # Centre half of the box only: far-side players are seen against the lit
+        # park lawn behind the pitch, which is the same yellow-green as a neon vest.
+        crop = _torso(frame, box, top=0.1, bottom=0.55, side=0.25)
         if crop is None:
             return None
         hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
@@ -138,8 +146,11 @@ class BibClassifier:
     def fit(self):
         pass
 
+    def sample_vote(self, fraction: float) -> int:
+        return int(fraction >= self.min_fraction)
+
     def vote(self, track_id: int, fraction: float) -> int:
-        self.votes[track_id][int(fraction >= self.min_fraction)] += 1
+        self.votes[track_id][self.sample_vote(fraction)] += 1
         return self.team_of(track_id)
 
     def team_of(self, track_id: int) -> int:
