@@ -139,7 +139,11 @@ tests/          synthetic-data tests (no GPU needed)
 
 - The stock COCO "sports ball" class often misses a small, fast or far ball, and it detects cones as balls.
   Candidates that don't move for 3 seconds, or that are off the pitch, are ignored, but passes and possession are still rough until Phase 2.
-- Track IDs can swap when players cross or overlap, and one player can end up with several IDs. Per-team totals are more reliable than per-player stats for now.
+- Track IDs can swap when players cross or overlap. After the run, broken tracks are joined: a track that
+  starts within 2 s of another ending, at a spot the player could have reached, is the same player (never
+  across teams). `annotated.mp4` is drawn after that, with the final IDs (1, 2, 3...) and teams. The live view
+  shows the tracker's raw IDs.
+- People whose usual position is outside the lines (coach, bench) are dropped after calibration.
 - Goalkeepers and referees get pushed into one of the two teams.
 - Anyone more than 1.5 m outside the lines is ignored (`analysis.pitch_margin` in config.yaml). This only works after calibration.
 - A ball in the air is projected as if it were on the ground.

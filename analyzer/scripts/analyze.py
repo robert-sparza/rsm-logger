@@ -81,29 +81,22 @@ def main():
     pipe = make_pipeline(cfg, hom, video_fps, args.bib)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    writer = None
     t0 = time.time()
 
     for idx, t, frame in read_frames(args.source, args.stride):
         if args.max_seconds and t > args.max_seconds:
             break
-        dets = pipe.step(idx, t, frame)
-        if not args.no_video:
-            vis = viz.annotate_frame(frame, dets, pipe.team_map(), pipe.team_colors, pipe.jersey_colors)
-            if hom is not None:
-                pts = [(r["x"], r["y"], r["team"], r["cls"] == "ball") for r in pipe.rows if r["frame"] == idx]
-                vis = viz.paste_minimap(vis, viz.minimap(hom.pitch, pts, pipe.team_colors))
-            if writer is None:
-                h, w = vis.shape[:2]
-                writer = cv2.VideoWriter(str(out / "annotated.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
-            writer.write(vis)
+        pipe.step(idx, t, frame)
         if idx % (100 * args.stride) == 0:
             print(f"  t={t:7.1f}s  frame={idx}  {idx / args.stride / max(time.time() - t0, 1e-6):.1f} fps")
 
-    if writer:
-        writer.release()
     df = pipe.save(out)
     print(f"Tracked {len(df)} detections in {time.time() - t0:.0f}s -> {out / 'tracks.csv'}")
+    if not args.no_video:
+        # Drawn after the whole video is analyzed, so IDs and teams are the final, joined ones.
+        print("Writing annotated.mp4 ...")
+        viz.render_video(args.source, df, out / "annotated.mp4", fps, args.stride,
+                         hom.pitch if hom else None, pipe.jersey_colors, args.max_seconds)
     summary = build_report(df, out, hom.pitch if hom else None)
     print(yaml.safe_dump(summary, sort_keys=False))
 

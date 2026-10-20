@@ -155,3 +155,31 @@ def plot_passes(passes, df, pitch: Pitch, team: int, path: Path):
     ax.set_title(f"Team {team} passes")
     fig.savefig(path, dpi=120, bbox_inches="tight")
     plt.close(fig)
+
+
+def render_video(source: str, df, out_path: Path, fps: float, stride: int = 1, pitch: Pitch | None = None,
+                 legend_colors=None, max_seconds: float | None = None) -> None:
+    """Second pass: draw the cleaned-up tracks (final IDs and teams) onto the video."""
+    from .tracking import Detection, read_frames
+    team_colors = TEAM_FALLBACK[:2]
+    teams = df[df.cls == "player"].groupby("track_id").team.first().to_dict()
+    by_frame = {f: g for f, g in df.groupby("frame")}
+    writer = None
+    for idx, t, frame in read_frames(source, stride):
+        if max_seconds and t > max_seconds:
+            break
+        rows = by_frame.get(idx)
+        dets, pts = [], []
+        if rows is not None:
+            for r in rows.itertuples():
+                dets.append(Detection(int(r.track_id), r.cls, (r.bx1, r.by1, r.bx2, r.by2), r.conf))
+                pts.append((r.x, r.y, teams.get(r.track_id, -1), r.cls == "ball"))
+        vis = annotate_frame(frame, dets, teams, team_colors, legend_colors)
+        if pitch is not None:
+            vis = paste_minimap(vis, minimap(pitch, pts, team_colors))
+        if writer is None:
+            h, w = vis.shape[:2]
+            writer = cv2.VideoWriter(str(out_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
+        writer.write(vis)
+    if writer is not None:
+        writer.release()

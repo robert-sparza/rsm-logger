@@ -99,3 +99,28 @@ def test_pipeline_drops_spectators_and_static_ball():
     assert df[df.cls == "player"].groupby("track_id").team.first().to_dict() == {1: 1, 2: 0}
     late_ball = df[(df.cls == "ball") & (df.frame >= 40)]
     assert len(late_ball) == 20 and (late_ball.conf == 0.3).all()               # cone ignored
+
+
+def test_stitching_joins_broken_tracks_but_not_across_teams():
+    from soccer_analyzer.stitch import off_pitch_tracks, stitch_tracks
+    import pandas as pd
+    rows = []
+    for f in range(100):                      # player A walks right, ID changes at t=5 s (gap 0.5 s)
+        t = f / 10
+        if 50 <= f < 55:
+            continue
+        rows.append(dict(t=t, track_id=1 if f < 50 else 7, x=5 + 0.5 * t, y=5))
+    for f in range(100):                      # player B stands still far away, ID changes too
+        t = f / 10
+        if 50 <= f < 55:
+            continue
+        rows.append(dict(t=t, track_id=2 if f < 50 else 8, x=20, y=12))
+    for f in range(100):                      # coach on the near touchline (y > width)
+        rows.append(dict(t=f / 10, track_id=3, x=14, y=16.9))
+    df = pd.DataFrame(rows)
+    root = stitch_tracks(df)
+    assert root[7] == 1 and root[8] == 2
+    # Same geometry but sure of different teams -> must not be joined.
+    root = stitch_tracks(df, teams={1: 0, 7: 1})
+    assert root[7] == 7
+    assert off_pitch_tracks(df, 28.5, 16.3) == {3}

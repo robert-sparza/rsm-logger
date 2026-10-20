@@ -1,6 +1,7 @@
 """Frame-by-frame pipeline shared by offline analysis and the live view."""
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -8,6 +9,7 @@ import pandas as pd
 
 from .ball import BallSelector
 from .pitch import Homography, Pitch
+from .stitch import off_pitch_tracks, stitch_tracks
 from .teams import BibClassifier, TeamClassifier
 from .tracking import Detection, Tracker
 from .viz import TEAM_FALLBACK
@@ -67,8 +69,10 @@ class MatchPipeline:
                         self.teams.add_sample(feat)
             if d.cls == "player" and team < 0 and self.teams.fitted:
                 team = self.teams.team_of(d.track_id)
+            bx1, by1, bx2, by2 = (float(v) for v in d.box)
             self.rows.append(dict(frame=frame_idx, t=t, track_id=d.track_id, cls=d.cls, team=team,
-                                  conf=d.conf, px=float(px), py=float(py), x=float(x), y=float(y)))
+                                  conf=d.conf, px=float(px), py=float(py), x=float(x), y=float(y),
+                                  bx1=bx1, by1=by1, bx2=bx2, by2=by2))
 
         if not self.teams.fitted and self._n >= self.team_warmup_frames and len(self.teams.samples) >= 20:
             self.teams.fit()
@@ -77,14 +81,33 @@ class MatchPipeline:
     def team_map(self) -> dict[int, int]:
         return {tid: self.teams.team_of(tid) for tid in self.teams.votes}
 
-    def dataframe(self) -> pd.DataFrame:
+    def dataframe(self, clean: bool = True) -> pd.DataFrame:
+        """All detections. With clean=True (and a calibration): people whose usual
+        position is off the pitch are dropped, broken tracks are joined, and the
+        joined players get short IDs (1, 2, 3...) by first appearance. The
+        tracker's own id is kept in raw_track_id."""
         df = pd.DataFrame(self.rows)
         if df.empty:
             return df
-        # Re-label every player row with its track's final team.
-        tm = self.team_map()
+        df["raw_track_id"] = df.track_id
         players = df.cls == "player"
-        df.loc[players, "team"] = df.loc[players, "track_id"].map(tm).fillna(-1).astype(int)
+        if clean and self.hom is not None:
+            off = off_pitch_tracks(df[players], self.pitch.length, self.pitch.width)
+            df = df[~(players & df.track_id.isin(off))].copy()
+            players = df.cls == "player"
+            # Only pieces seen long enough (>= 10 colour samples) count as sure of their team.
+            sure = {raw: self.teams.decide(v) for raw, v in self.teams.votes.items() if sum(v.values()) >= 10}
+            root = stitch_tracks(df[players], teams={k: t for k, t in sure.items() if t >= 0})
+            df.loc[players, "track_id"] = df.loc[players, "track_id"].map(root).fillna(df.track_id).astype(int)
+        # Team = decision over all votes of every piece of the (joined) track.
+        votes: dict[int, Counter] = {}
+        for raw, tid in df.loc[players, ["raw_track_id", "track_id"]].drop_duplicates().itertuples(index=False):
+            votes.setdefault(tid, Counter()).update(self.teams.votes.get(raw, Counter()))
+        df.loc[players, "team"] = df.loc[players, "track_id"].map(
+            {tid: self.teams.decide(v) for tid, v in votes.items()}).fillna(-1).astype(int)
+        if clean:
+            order = df[players].groupby("track_id").frame.min().sort_values().index
+            df.loc[players, "track_id"] = df.loc[players, "track_id"].map({t: i + 1 for i, t in enumerate(order)})
         return df
 
     def save(self, out_dir: Path) -> pd.DataFrame:

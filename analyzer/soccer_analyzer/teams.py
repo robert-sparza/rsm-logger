@@ -97,8 +97,11 @@ class TeamClassifier:
         return self.team_of(track_id)
 
     def team_of(self, track_id: int) -> int:
-        c = self.votes.get(track_id)
-        return c.most_common(1)[0][0] if c else -1
+        return self.decide(self.votes.get(track_id))
+
+    @staticmethod
+    def decide(votes: Counter | None) -> int:
+        return votes.most_common(1)[0][0] if votes else -1
 
     def team_colors_bgr(self) -> list[tuple[int, int, int]]:
         assert self.kmeans is not None
@@ -140,10 +143,12 @@ class BibClassifier:
         return self.team_of(track_id)
 
     def team_of(self, track_id: int) -> int:
-        c = self.votes.get(track_id)
-        if not c:
+        return self.decide(self.votes.get(track_id))
+
+    def decide(self, votes: Counter | None) -> int:
+        if not votes or votes[0] + votes[1] == 0:
             return -1
-        return int(c[1] / (c[0] + c[1]) >= self.min_share)
+        return int(votes[1] / (votes[0] + votes[1]) >= self.min_share)
 
     def team_colors_bgr(self) -> list[tuple[int, int, int]]:
         return [(60, 60, 60), BIB_DRAW_BGR[self.color]]
