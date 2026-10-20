@@ -14,9 +14,8 @@ from pathlib import Path
 import cv2
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from analyze import ROOT, load_config, make_tracker  # noqa: E402
+from analyze import ROOT, add_team_args, load_config, make_pipeline  # noqa: E402
 from soccer_analyzer import viz  # noqa: E402
-from soccer_analyzer.pipeline import MatchPipeline  # noqa: E402
 from soccer_analyzer.pitch import Homography  # noqa: E402
 from soccer_analyzer.report import build_report  # noqa: E402
 from soccer_analyzer.tracking import LiveStream  # noqa: E402
@@ -29,11 +28,12 @@ def main():
     ap.add_argument("--out", default=f"runs/live_{time.strftime('%Y%m%d_%H%M')}")
     ap.add_argument("--config", default=str(ROOT / "config.yaml"))
     ap.add_argument("--record", action="store_true", help="also save the raw stream to out/raw.mp4")
+    add_team_args(ap)
     args = ap.parse_args()
 
     cfg = load_config(Path(args.config))
     hom = Homography.load(args.calib) if args.calib else None
-    pipe = MatchPipeline(make_tracker(cfg), hom)
+    pipe = make_pipeline(cfg, hom, 30.0, args.bib)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     stream = LiveStream(args.source, str(out / "raw.mp4") if args.record else None)

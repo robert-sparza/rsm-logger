@@ -81,4 +81,4 @@ def test_on_pitch_filters_spectators(tmp_path):
     hom.save(tmp_path / "c.json")
     loaded = Homography.load(tmp_path / "c.json")
     assert loaded.pitch == pitch
-    assert loaded.pitch.landmarks()["center_circle_top"] == (25, 9)
+    assert loaded.pitch.landmarks()["center_circle_far"] == (25, 9)

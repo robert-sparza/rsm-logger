@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from soccer_analyzer.pipeline import MatchPipeline  # noqa: E402
 from soccer_analyzer.pitch import Homography  # noqa: E402
 from soccer_analyzer.report import build_report  # noqa: E402
+from soccer_analyzer.teams import BIB_COLORS, BibClassifier, TeamClassifier  # noqa: E402
 from soccer_analyzer.tracking import Tracker, read_frames  # noqa: E402
 from soccer_analyzer import viz  # noqa: E402
 
@@ -42,6 +43,21 @@ def make_tracker(cfg: dict) -> Tracker:
                    tracker=str(ROOT / m.get("tracker", "trackers/bytetrack_soccer.yaml")))
 
 
+def make_pipeline(cfg: dict, hom, video_fps: float, bib: str | None = None) -> MatchPipeline:
+    """bib: bib colour name to split teams by bib (overrides config.yaml)."""
+    t = cfg.get("teams", {})
+    bib = bib or (t.get("bib_color") if t.get("mode") == "bib" else None)
+    teams = BibClassifier(bib) if bib else TeamClassifier()
+    print(f"Teams: {'bib colour ' + bib + ' = team 1' if bib else 'automatic (2 shirt colours)'}")
+    return MatchPipeline(make_tracker(cfg), hom, teams=teams,
+                         pitch_margin=cfg.get("analysis", {}).get("pitch_margin", 1.5), fps=video_fps)
+
+
+def add_team_args(ap: argparse.ArgumentParser) -> None:
+    ap.add_argument("--bib", choices=sorted(BIB_COLORS),
+                    help="training with bibs: players wearing this colour are team 1, everyone else team 0")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("source")
@@ -51,19 +67,20 @@ def main():
     ap.add_argument("--stride", type=int, default=1, help="process every Nth frame (2 = twice as fast)")
     ap.add_argument("--max-seconds", type=float, help="stop after this much video (for quick tests)")
     ap.add_argument("--no-video", action="store_true", help="skip writing annotated.mp4")
+    add_team_args(ap)
     args = ap.parse_args()
 
     cfg = load_config(Path(args.config))
     hom = Homography.load(args.calib) if args.calib else None
     if hom is None:
         print("No --calib given: tracking only, no pitch maps. Run scripts/calibrate.py first for full analysis.")
-    pipe = MatchPipeline(make_tracker(cfg), hom)
+    cap = cv2.VideoCapture(args.source)
+    video_fps = cap.get(cv2.CAP_PROP_FPS) or 30
+    fps = video_fps / args.stride
+    cap.release()
+    pipe = make_pipeline(cfg, hom, video_fps, args.bib)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-
-    cap = cv2.VideoCapture(args.source)
-    fps = (cap.get(cv2.CAP_PROP_FPS) or 30) / args.stride
-    cap.release()
     writer = None
     t0 = time.time()
 

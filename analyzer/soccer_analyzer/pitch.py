@@ -1,8 +1,8 @@
 """Pitch model and camera -> pitch homography.
 
-Pitch coordinates are in metres with the origin at the top-left corner flag
-(as seen from the camera), x along the touchline (0..length) and y across the
-pitch (0..width).
+Pitch coordinates are in metres with the origin at the far-left corner flag
+as seen from the camera, x along the touchline (0..length, left to right) and
+y across the pitch (0 = far touchline, width = near touchline, closest to the camera).
 """
 from __future__ import annotations
 
@@ -27,37 +27,59 @@ class Pitch:
     penalty_spot: float = 11.0
 
     def landmarks(self) -> dict[str, tuple[float, float]]:
-        """Named points that are easy to click on a frame."""
+        """Named points that are easy to click on a frame.
+
+        "far" = the touchline away from the camera, "near" = the one closest to it;
+        left/right as seen in the video.
+        """
         L, W = self.length, self.width
         pa_d, pa_w = self.box_depth, self.box_width
         ga_d, ga_w = self.goal_area_depth, self.goal_area_width
         r, ps = self.circle_radius, self.penalty_spot
         cy = W / 2
         return {
-            "corner_top_left": (0, 0),
-            "corner_top_right": (L, 0),
-            "corner_bottom_right": (L, W),
-            "corner_bottom_left": (0, W),
-            "halfway_top": (L / 2, 0),
-            "halfway_bottom": (L / 2, W),
+            "far_left_corner": (0, 0),
+            "far_right_corner": (L, 0),
+            "near_right_corner": (L, W),
+            "near_left_corner": (0, W),
+            "halfway_far_end": (L / 2, 0),
+            "halfway_near_end": (L / 2, W),
             "center_spot": (L / 2, cy),
-            "center_circle_top": (L / 2, cy - r),
-            "center_circle_bottom": (L / 2, cy + r),
-            "left_box_top_line": (0, cy - pa_w / 2),
-            "left_box_top_corner": (pa_d, cy - pa_w / 2),
-            "left_box_bottom_corner": (pa_d, cy + pa_w / 2),
-            "left_box_bottom_line": (0, cy + pa_w / 2),
-            "left_6yd_top_corner": (ga_d, cy - ga_w / 2),
-            "left_6yd_bottom_corner": (ga_d, cy + ga_w / 2),
+            "center_circle_far": (L / 2, cy - r),
+            "center_circle_near": (L / 2, cy + r),
+            "left_box_far_goalline": (0, cy - pa_w / 2),
+            "left_box_far_corner": (pa_d, cy - pa_w / 2),
+            "left_box_near_corner": (pa_d, cy + pa_w / 2),
+            "left_box_near_goalline": (0, cy + pa_w / 2),
+            "left_6yd_far_corner": (ga_d, cy - ga_w / 2),
+            "left_6yd_near_corner": (ga_d, cy + ga_w / 2),
             "left_penalty_spot": (ps, cy),
-            "right_box_top_line": (L, cy - pa_w / 2),
-            "right_box_top_corner": (L - pa_d, cy - pa_w / 2),
-            "right_box_bottom_corner": (L - pa_d, cy + pa_w / 2),
-            "right_box_bottom_line": (L, cy + pa_w / 2),
-            "right_6yd_top_corner": (L - ga_d, cy - ga_w / 2),
-            "right_6yd_bottom_corner": (L - ga_d, cy + ga_w / 2),
+            "right_box_far_goalline": (L, cy - pa_w / 2),
+            "right_box_far_corner": (L - pa_d, cy - pa_w / 2),
+            "right_box_near_corner": (L - pa_d, cy + pa_w / 2),
+            "right_box_near_goalline": (L, cy + pa_w / 2),
+            "right_6yd_far_corner": (L - ga_d, cy - ga_w / 2),
+            "right_6yd_near_corner": (L - ga_d, cy + ga_w / 2),
             "right_penalty_spot": (L - ps, cy),
         }
+
+    def marking_polylines(self, n: int = 40) -> list[np.ndarray]:
+        """Every painted line as a polyline in pitch metres (for drawing/checking)."""
+        L, W, cy = self.length, self.width, self.width / 2
+        a = np.linspace(0, 2 * np.pi, n)
+        lines = [np.array([[0, 0], [L, 0], [L, W], [0, W], [0, 0]]),
+                 np.array([[L / 2, 0], [L / 2, W]]),
+                 np.c_[L / 2 + self.circle_radius * np.cos(a), cy + self.circle_radius * np.sin(a)]]
+        for x0, s in ((0, 1), (L, -1)):
+            for d, w in ((self.box_depth, self.box_width), (self.goal_area_depth, self.goal_area_width)):
+                lines.append(np.array([[x0, cy - w / 2], [x0 + s * d, cy - w / 2],
+                                       [x0 + s * d, cy + w / 2], [x0, cy + w / 2]]))
+        # Resample straight segments so they bend correctly under perspective.
+        out = []
+        for pl in lines:
+            pts = [np.linspace(p, q, n // 4) for p, q in zip(pl[:-1], pl[1:])]
+            out.append(np.concatenate(pts).astype(np.float32))
+        return out
 
 
 @dataclass

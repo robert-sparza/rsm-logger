@@ -41,8 +41,9 @@ def player_stats(df: pd.DataFrame) -> pd.DataFrame:
     return stats.sort_values("distance_m", ascending=False)
 
 
-def heatmap(df: pd.DataFrame, length: float = 105, width: float = 68, bins=(42, 27)) -> np.ndarray:
-    """2D occupancy histogram (shape bins[1] x bins[0]) of the given rows."""
+def heatmap(df: pd.DataFrame, length: float = 105, width: float = 68, bins=None) -> np.ndarray:
+    """2D occupancy histogram (shape bins[1] x bins[0]) of the given rows, ~1 m cells by default."""
+    bins = bins or (max(int(round(length)), 10), max(int(round(width)), 6))
     h, _, _ = np.histogram2d(df["y"], df["x"], bins=[bins[1], bins[0]], range=[[0, width], [0, length]])
     return h
 

@@ -6,22 +6,26 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from .ball import BallSelector
 from .pitch import Homography, Pitch
-from .teams import TeamClassifier, jersey_color
+from .teams import BibClassifier, TeamClassifier
 from .tracking import Detection, Tracker
 from .viz import TEAM_FALLBACK
 
 
 class MatchPipeline:
     def __init__(self, tracker: Tracker, homography: Homography | None,
-                 team_warmup_frames: int = 50, color_every: int = 3, pitch_margin: float = 3.0):
+                 teams: TeamClassifier | BibClassifier | None = None,
+                 team_warmup_frames: int = 50, color_every: int = 3, pitch_margin: float = 1.5,
+                 fps: float = 30.0):
         self.tracker = tracker
         self.hom = homography
         self.pitch = homography.pitch if homography else Pitch()
-        self.teams = TeamClassifier()
+        self.teams = teams or TeamClassifier()
         self.team_warmup_frames = team_warmup_frames
         self.color_every = color_every
         self.pitch_margin = pitch_margin
+        self.ball = BallSelector(static_frames=int(3 * fps), gap_frames=int(0.5 * fps), memory_frames=int(fps))
         self.rows: list[dict] = []
         self._n = 0
 
@@ -41,22 +45,26 @@ class MatchPipeline:
             # Ball "foot" is where it would touch the ground; fine for ground balls,
             # wrong for balls in the air (needs height estimation - later phase).
             xy = self.hom.to_pitch(feet)
-            # Spectators, subs and people on neighbouring fields are not players.
-            keep = self.hom.on_pitch(xy, self.pitch_margin) | np.array([d.cls == "ball" for d in dets])
-            dets = [d for d, k in zip(dets, keep) if k]
-            feet, xy = feet[keep], xy[keep]
+            on_pitch = self.hom.on_pitch(xy, self.pitch_margin)
         else:
             xy = np.full((len(dets), 2), np.nan, np.float32)
+            on_pitch = np.ones(len(dets), bool)
+
+        # Spectators, subs, coaches and people on neighbouring fields are not players.
+        ball = self.ball.select(frame_idx, [(d, k) for d, k in zip(dets, on_pitch) if d.cls == "ball"])
+        keep = [(d.cls == "player" and k) or d is ball for d, k in zip(dets, on_pitch)]
+        dets = [d for d, k in zip(dets, keep) if k]
+        feet, xy = feet[keep], xy[keep]
 
         for d, (px, py), (x, y) in zip(dets, feet, xy):
             team = -1
             if d.cls == "player" and frame_idx % self.color_every == 0:
-                col = jersey_color(frame, d.box)
-                if col is not None:
+                feat = self.teams.feature(frame, d.box)
+                if feat is not None:
                     if self.teams.fitted:
-                        team = self.teams.vote(d.track_id, col)
+                        team = self.teams.vote(d.track_id, feat)
                     else:
-                        self.teams.add_sample(col)
+                        self.teams.add_sample(feat)
             if d.cls == "player" and team < 0 and self.teams.fitted:
                 team = self.teams.team_of(d.track_id)
             self.rows.append(dict(frame=frame_idx, t=t, track_id=d.track_id, cls=d.cls, team=team,
@@ -73,7 +81,7 @@ class MatchPipeline:
         df = pd.DataFrame(self.rows)
         if df.empty:
             return df
-        # Re-label every player row with its track's final majority team.
+        # Re-label every player row with its track's final team.
         tm = self.team_map()
         players = df.cls == "player"
         df.loc[players, "team"] = df.loc[players, "track_id"].map(tm).fillna(-1).astype(int)

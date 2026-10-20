@@ -48,16 +48,12 @@ class Tracker:
         classes = res.boxes.cls.cpu().numpy().astype(int)
         confs = res.boxes.conf.cpu().numpy()
         ids = res.boxes.id.cpu().numpy().astype(int) if res.boxes.id is not None else -np.ones(len(boxes), int)
-        best_ball: Detection | None = None
         for box, c, p, tid in zip(boxes, classes, confs, ids):
             if c in self.ball_ids:
-                # There is only one ball: keep the most confident candidate.
-                if best_ball is None or p > best_ball.conf:
-                    best_ball = Detection(-1, "ball", tuple(box), float(p))
+                # Every candidate is returned; BallSelector picks the real one.
+                out.append(Detection(-1, "ball", tuple(box), float(p)))
             elif c in self.player_ids and tid >= 0:
                 out.append(Detection(int(tid), "player", tuple(box), float(p)))
-        if best_ball:
-            out.append(best_ball)
         return out
 
 

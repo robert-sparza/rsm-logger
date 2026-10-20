@@ -11,3 +11,12 @@ model:
   ball_class_ids: [32]   # COCO "sports ball"
   tracker: trackers/bytetrack_soccer.yaml  # longer memory so IDs survive occlusions
   # tracker: trackers/botsort_moving_camera.yaml  # use this for auto-tracking / zooming footage
+
+teams:
+  mode: auto               # auto = split by the two shirt colours (matches)
+  # mode: bib              # training with bibs/vests: players wearing bib_color = team 1
+  bib_color: neon_yellow   # neon_yellow | orange | pink | blue | red
+  # (or just add --bib neon_yellow to analyze.py / live.py)
+
+analysis:
+  pitch_margin: 1.5        # metres outside the lines still counted as on the pitch

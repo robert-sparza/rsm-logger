@@ -46,6 +46,18 @@ python scripts\analyze.py data\videos\match.mp4 --calib runs\calib.json --out ru
 python scripts\analyze.py data\videos\match.mp4 --calib runs\calib.json --out runs\match1
 ```
 
+**Calibration tips.** "far" means the touchline away from the camera, and "near" means the one closest to the camera.
+Five clicks are enough: far-left corner, far-right corner, the far end of the halfway line, the near end of the
+halfway line, and the centre spot. Press `s` to skip corners that are outside the frame. Only click circle or box
+points if you pass their real sizes (`--circle-radius`, `--box-depth`, `--box-width`). The script prints the error
+of each click; anything over about 0.75 m is a wrong click or a wrong size.
+
+Example: the small training pitch (28.5 × 16.3 m, circle radius 3.0 m, box 5.0 × 9.1 m):
+`python scripts\calibrate.py data\videos\training.mp4 --out runs\calib_small.json --length 28.5 --width 16.3 --circle-radius 3.0 --box-depth 5.0 --box-width 9.1`
+
+**Training with bibs.** Add `--bib neon_yellow` (or orange, pink, blue, red) to `analyze.py` or `live.py`.
+Players in bibs become team 1 and everyone else team 0. A match with two kits needs no option.
+
 Measure your actual pitch and pass `--length/--width`. Youth and amateur pitches are rarely 105×68 m.
 `calibrate.py` saves a `calib.check.jpg` with the pitch lines drawn back onto the frame. If the
 red lines don't sit on the real lines, redo the calibration with more points.
@@ -125,7 +137,9 @@ tests/          synthetic-data tests (no GPU needed)
 
 ## Known limitations (Phase 1)
 
-- The stock COCO "sports ball" class often misses a small, fast or far ball. Passes and possession depend on it, so treat them as rough until Phase 2.
+- The stock COCO "sports ball" class often misses a small, fast or far ball, and it detects cones as balls.
+  Candidates that don't move for 3 seconds, or that are off the pitch, are ignored, but passes and possession are still rough until Phase 2.
 - Track IDs can swap when players cross or overlap, and one player can end up with several IDs. Per-team totals are more reliable than per-player stats for now.
 - Goalkeepers and referees get pushed into one of the two teams.
+- Anyone more than 1.5 m outside the lines is ignored (`analysis.pitch_margin` in config.yaml). This only works after calibration.
 - A ball in the air is projected as if it were on the ground.

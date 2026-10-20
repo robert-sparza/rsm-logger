@@ -56,8 +56,9 @@ def annotate_frame(frame, dets, teams: dict[int, int], team_colors, jersey_color
     return out
 
 
-def minimap(pitch: Pitch, points, team_colors, scale: float = 4.0) -> np.ndarray:
-    """points: iterable of (x_m, y_m, team, is_ball)."""
+def minimap(pitch: Pitch, points, team_colors, scale: float | None = None) -> np.ndarray:
+    """points: iterable of (x_m, y_m, team, is_ball). Drawn ~420 px wide whatever the pitch size."""
+    scale = scale or 420 / pitch.length
     img = draw_pitch(pitch, scale=scale)
     for x, y, team, is_ball in points:
         if not (-5 <= x <= pitch.length + 5 and -5 <= y <= pitch.width + 5):
@@ -72,13 +73,16 @@ def minimap(pitch: Pitch, points, team_colors, scale: float = 4.0) -> np.ndarray
     return img
 
 
-def paste_minimap(frame: np.ndarray, mm: np.ndarray, width_frac: float = 0.3) -> np.ndarray:
+def paste_minimap(frame: np.ndarray, mm: np.ndarray, width_frac: float = 0.25) -> np.ndarray:
+    """Top-right corner: usually sky/stands from a sideline camera, not the pitch."""
     h, w = frame.shape[:2]
     tw = int(w * width_frac)
     th = int(mm.shape[0] * tw / mm.shape[1])
-    small = cv2.resize(mm, (tw, th))
+    small = cv2.resize(mm, (tw, th), interpolation=cv2.INTER_AREA)
     out = frame.copy()
-    out[h - th - 10:h - 10, (w - tw) // 2:(w - tw) // 2 + tw] = small
+    x0, y0 = w - tw - 10, 10
+    out[y0:y0 + th, x0:x0 + tw] = small
+    cv2.rectangle(out, (x0, y0), (x0 + tw, y0 + th), (255, 255, 255), 1)
     return out
 
 
@@ -108,8 +112,10 @@ def plot_heatmap(h: np.ndarray, pitch: Pitch, title: str, path: Path):
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(10, 6.8))
     _mpl_pitch(ax, pitch)
-    ax.imshow(h, extent=(0, pitch.length, pitch.width, 0), cmap="hot", alpha=0.65,
-              interpolation="bicubic", zorder=0)
+    # Empty cells stay transparent so the pitch shows through.
+    hs = cv2.GaussianBlur(h.astype(np.float32), (0, 0), 1.0)
+    ax.imshow(np.ma.masked_less(hs, 0.05 * hs.max() if hs.max() > 0 else 1), extent=(0, pitch.length, pitch.width, 0),
+              cmap="YlOrRd", alpha=0.8, interpolation="bilinear", zorder=0)
     ax.set_title(title)
     fig.savefig(path, dpi=120, bbox_inches="tight")
     plt.close(fig)
