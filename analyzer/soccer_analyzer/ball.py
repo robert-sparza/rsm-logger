@@ -48,13 +48,15 @@ class BallSelector:
         # radius_px is the minimum; the radius also grows with the ball's size in the image
         # (a ball near a 4K camera jitters more pixels than a far one).
         self.confirmed_memory_frames = confirmed_memory_frames
+        self.fresh_frames = max(1, static_frames // 3)   # ~0.5 s in one spot = probably resting
         self.radius_px = radius_px
         self.gap_frames = gap_frames
         self.memory_frames = memory_frames
         self.spots: list[_StaticSpot] = []
         self.last: tuple[int, float, float] | None = None   # frame, x, y of last chosen ball
 
-    def _is_static(self, frame_idx: int, x: float, y: float, size: float) -> bool:
+    def _spot(self, frame_idx: int, x: float, y: float, size: float) -> tuple[bool, int]:
+        """(confirmed still, frames this candidate has stayed at this spot)."""
         radius = max(self.radius_px, 0.5 * size)
         for s in self.spots:
             if np.hypot(s.x - x, s.y - y) <= radius:
@@ -62,9 +64,9 @@ class BallSelector:
                     s.first = frame_idx
                 s.last = frame_idx
                 s.confirmed = s.confirmed or s.last - s.first >= self.static_frames
-                return s.confirmed
+                return s.confirmed, s.last - s.first
         self.spots.append(_StaticSpot(x, y, frame_idx, frame_idx))
-        return False
+        return False, 0
 
     def select(self, frame_idx: int, candidates):
         """candidates: list of (detection, on_pitch). Returns the chosen detection or None."""
@@ -74,11 +76,15 @@ class BallSelector:
         for det, on_pitch in candidates:
             x1, y1, x2, y2 = det.box
             cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-            static = self._is_static(frame_idx, cx, cy, max(x2 - x1, y2 - y1))
+            static, age = self._spot(frame_idx, cx, cy, max(x2 - x1, y2 - y1))
             if on_pitch and not static:
-                eligible.append((det, cx, cy))
+                eligible.append((det, cx, cy, age))
         if not eligible:
             return None
+        # A ball that just moved to a new spot beats one that has sat still for a while but
+        # isn't confirmed yet (a spare ball in its first 1.5 s), whatever was picked before.
+        moving = [e for e in eligible if e[3] < self.fresh_frames]
+        eligible = [e[:3] for e in (moving or eligible)]
         if self.last is not None and frame_idx - self.last[0] <= self.memory_frames:
             _, lx, ly = self.last
             det, cx, cy = min(eligible, key=lambda e: np.hypot(e[1] - lx, e[2] - ly))

@@ -91,9 +91,15 @@ python scripts\train.py data\datasets\soccer-v1\data.yaml
 python scripts\evaluate.py data\videos\training.mp4 --models yolo11m.pt runs\train\soccer-v1\weights\best.pt --imgsz 1280 1600 --calib runs\calib_small.json
 ```
 
-It prints, for each model, the players per frame (steadier is better), the % of frames
-where the ball is found (higher is better), and cones called ball (lower is better).
-Ideally test on a video that was **not** used for labelling.
+It runs each model over the video with the same ball filter as the analyzer and prints:
+- **ball in play**: % of frames where a moving ball on the pitch was found. Spare balls, the coach's
+  ball and cones don't count. This is the number to improve.
+- **near a player**: of those, how many were within 2 m of a player (a check that it's the play ball).
+- **players/frame**: people on the pitch per frame. Steadier (small ±) is better.
+- **cones as ball**: lower is better.
+
+The table is also saved to `runs\evaluate_<video>.txt`. Ideally test on a video that was **not**
+used for labelling.
 
 ## 7. Switch the analyzer to your model
 

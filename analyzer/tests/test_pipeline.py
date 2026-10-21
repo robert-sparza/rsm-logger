@@ -288,3 +288,30 @@ def test_big_near_ball_jitter_is_the_same_spot():
         dy = 7 if f % 2 else -7
         picks.append(sel.select(f, [(Detection(-1, "ball", (1000, 1500 + dy, 1060, 1560 + dy), 0.9), True)]))
     assert all(p is None for p in picks[35:])
+
+
+def test_evaluate_drops_balls_sitting_still_in_hindsight():
+    import importlib.util
+    scripts = Path(__file__).resolve().parents[1] / "scripts"
+    sys.path.insert(0, str(scripts))
+    spec = importlib.util.spec_from_file_location("evaluate", scripts / "evaluate.py")
+    ev = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ev)
+    # A resting ball detected for 3 s, but picked only in its first 1.5 s (then the live filter
+    # confirms it is still); a rolling ball picked for 3 s.
+    resting = [(f, 500.0, 300.0) for f in range(0, 90, 3)]
+    rolling = [(f, 100.0 + 10 * f, 200.0) for f in range(90, 180, 3)]
+    picks = [(f, x, y, 20.0) for f, x, y in resting[:15] + rolling]
+    flags = ev.still_picks(picks, resting + rolling, fps=30)
+    assert flags[:15].all() and not flags[15:].any()
+
+
+def test_moving_ball_beats_a_resting_ball_not_yet_confirmed():
+    sel = BallSelector(static_frames=45, gap_frames=150, memory_frames=30)
+    resting = Detection(-1, "ball", (880, 990, 900, 1010), 0.9)
+    for f in range(20):                                     # only the resting ball for 20 frames
+        assert sel.select(f, [(resting, True)]) is resting
+    for f in range(20, 40):                                 # a ball starts rolling nearby
+        x = 600 + 10 * f
+        rolling = Detection(-1, "ball", (x, 700, x + 20, 720), 0.4)
+        assert sel.select(f, [(resting, True), (rolling, True)]) is rolling
