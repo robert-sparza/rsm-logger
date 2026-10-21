@@ -146,6 +146,11 @@ tests/          synthetic-data tests (no GPU needed)
   across teams). `annotated.mp4` is drawn after that, with the final IDs (1, 2, 3...) and teams. The live view
   shows the tracker's raw IDs.
 - People whose usual position is outside the lines (coach, bench) are dropped after calibration.
+- Players with hidden legs (behind a tree, a person, the frame edge) get their feet placed from their head and the
+  usual player height at that spot, so they don't jump away from the camera and lose their ID. Tracks are joined
+  across gaps of up to 8 s. A player fully hidden for longer than that, or near others when they reappear,
+  may still get a new ID.
+- Shirt colour isn't sampled from players lying down or overlapping another player.
 - Goalkeepers and referees get pushed into one of the two teams.
 - Anyone more than 1.5 m outside the lines is ignored (`analysis.pitch_margin` in config.yaml). This only works after calibration.
 - A ball in the air is projected as if it were on the ground.

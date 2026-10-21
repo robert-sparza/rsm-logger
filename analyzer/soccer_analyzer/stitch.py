@@ -23,13 +23,16 @@ def _track_table(players: pd.DataFrame, edge_rows: int = 5) -> pd.DataFrame:
     })
 
 
-def stitch_tracks(players: pd.DataFrame, max_gap_s: float = 2.0, max_speed: float = 7.0,
+def stitch_tracks(players: pd.DataFrame, max_gap_s: float = 8.0, max_speed: float = 7.0,
                   slack_m: float = 1.5, teams: dict[int, int] | None = None) -> dict[int, int]:
     """Map every track id to the id of the first track in its chain.
 
     players: rows of one class with t, track_id, x, y (pitch metres).
     Track B continues track A if B starts at most `max_gap_s` after A ends and
-    no further than a player could run in that gap (+ `slack_m` for jitter).
+    no further than a player could have moved in that gap (+ `slack_m` for jitter).
+    Short gaps allow sprinting speed; over long gaps (a player hidden behind a
+    tree for several seconds) the allowed distance grows only ~2 m/s, since
+    nobody sprints flat out the whole time and the pitch is small.
     When several ended tracks could continue into B, the closest one wins.
     teams: confident team per track id (leave out unsure ones); tracks of
     different teams are never joined.
@@ -48,7 +51,7 @@ def stitch_tracks(players: pd.DataFrame, max_gap_s: float = 2.0, max_speed: floa
             if tid in teams and r in chain_team and teams[tid] != chain_team[r]:
                 continue
             d = np.hypot(tr.x0 - x1, tr.y0 - y1)
-            reach = max_speed * gap + slack_m
+            reach = slack_m + min(max_speed * gap, 4.0 + 2.0 * gap)
             if d <= reach and d / reach < best_score:
                 best, best_score = r, d / reach
         r = best if best is not None else tid

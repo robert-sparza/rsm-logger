@@ -9,10 +9,29 @@ import pandas as pd
 
 from .ball import BallSelector, cone_colored
 from .pitch import Homography, Pitch
+from .occlusion import fix_occluded_feet
 from .stitch import off_pitch_tracks, split_on_team_change, stitch_tracks
 from .teams import BibClassifier, TeamClassifier
 from .tracking import Detection, Tracker
 from .viz import TEAM_FALLBACK
+
+
+def reliable_colour_box(box, all_boxes, max_overlap: float = 0.3) -> bool:
+    """Shirt colour is only trusted for an upright player not mixed up with another:
+    a box wider than tall is someone lying down (the "torso" crop misses the shirt),
+    and a box overlapping another player's mixes the two shirts."""
+    x1, y1, x2, y2 = box
+    w, h = x2 - x1, y2 - y1
+    if w <= 0 or h <= 0 or w > 1.2 * h:
+        return False
+    for o in all_boxes:
+        if o is box:
+            continue
+        iw = min(x2, o[2]) - max(x1, o[0])
+        ih = min(y2, o[3]) - max(y1, o[1])
+        if iw > 0 and ih > 0 and iw * ih > max_overlap * w * h:
+            return False
+    return True
 
 
 class MatchPipeline:
@@ -60,9 +79,10 @@ class MatchPipeline:
         dets = [d for d, k in zip(dets, keep) if k]
         feet, xy = feet[keep], xy[keep]
 
+        player_boxes = [d.box for d in dets if d.cls == "player"]
         for d, (px, py), (x, y) in zip(dets, feet, xy):
             team, bib, vote = -1, np.nan, np.nan
-            if d.cls == "player" and frame_idx % self.color_every == 0:
+            if d.cls == "player" and frame_idx % self.color_every == 0 and reliable_colour_box(d.box, player_boxes):
                 feat = self.teams.feature(frame, d.box)
                 if isinstance(feat, float):
                     bib = feat          # saved for checking/tuning the bib rule
@@ -105,6 +125,10 @@ class MatchPipeline:
             return {tid: Counter(g.vote.astype(int)) for tid, g in v.groupby("track_id")}
 
         if clean and self.hom is not None:
+            fixed = fix_occluded_feet(df[players], self.hom)
+            df.loc[players, ["py", "x", "y"]] = fixed[["py", "x", "y"]]
+            df["occluded"] = False
+            df.loc[players, "occluded"] = fixed["occluded"]
             df.loc[players, "track_id"] = split_on_team_change(df[players], self.teams.decide)
             off = off_pitch_tracks(df[players], self.pitch.length, self.pitch.width)
             df = df[~(players & df.track_id.isin(off))].copy()

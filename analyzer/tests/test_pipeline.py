@@ -179,3 +179,36 @@ def test_flickering_static_spot_becomes_static():
         cands.append((Detection(-1, "ball", (x, 200, x + 10, 210), 0.3), True))
         picks.append(sel.select(f, cands))
     assert all(p.conf == 0.3 for p in picks[40:])
+
+
+def test_hidden_legs_get_feet_from_head():
+    from soccer_analyzer.occlusion import fix_occluded_feet
+    import pandas as pd
+    pitch = Pitch(length=40, width=20)
+    pts = np.array([[0, 0], [40, 0], [40, 20], [0, 20]], np.float32)
+    hom = Homography.fit(pts * 10, pts, pitch)          # 10 px per metre, top-down for simplicity
+    rng = np.random.default_rng(1)
+    rows = []
+    for i in range(300):                                 # fully visible players: height = 60 + 0.5 * top
+        top = rng.uniform(0, 150)
+        h = 60 + 0.5 * top
+        rows.append(dict(px=200.0, by1=top, by2=top + h, bx1=180.0, bx2=180 + 0.4 * h))
+    rows.append(dict(px=200.0, by1=100.0, by2=150.0, bx1=180.0, bx2=220.0))     # legs hidden: 50 px of 110
+    rows.append(dict(px=200.0, by1=100.0, by2=150.0, bx1=150.0, bx2=250.0))     # lying down: wide box
+    df = pd.DataFrame(rows)
+    df["py"] = df.by2
+    df[["x", "y"]] = hom.to_pitch(df[["px", "py"]].to_numpy())
+    out = fix_occluded_feet(df, hom)
+    hidden, lying = out.iloc[-2], out.iloc[-1]
+    assert hidden.occluded and abs(hidden.py - 210) < 10       # feet put back near 100 + 110
+    assert not lying.occluded and lying.py == 150
+    assert out.iloc[:-2].occluded.mean() < 0.05
+
+
+def test_colour_ignored_for_lying_or_overlapping_players():
+    from soccer_analyzer.pipeline import reliable_colour_box
+    upright, lying = (0, 0, 40, 100), (0, 0, 150, 60)
+    other = (10, 0, 50, 100)                              # overlaps `upright` heavily
+    assert reliable_colour_box(upright, [upright])
+    assert not reliable_colour_box(lying, [lying])
+    assert not reliable_colour_box(upright, [upright, other])
