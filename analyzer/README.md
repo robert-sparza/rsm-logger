@@ -99,7 +99,7 @@ You can open the stream in VLC at the same URL to check it before running the an
 | Phase | Goal | What to build |
 |---|---|---|
 | **1 – done here** | Offline analysis with stock models | Detection and tracking (YOLO11 + ByteTrack), team split by jersey colour, manual calibration, heatmaps, distance and speed, ball path, possession, passes |
-| **2** | Better detection | Fine-tune YOLO on football data: Roboflow Universe "football-players-detection" plus ~300 labelled frames from **your** camera. Separate classes for ball, goalkeeper, player and referee. The ball is the weakest part of Phase 1. |
+| **2 – tools ready, see [PHASE2.md](PHASE2.md)** | Better detection | Train our own detector on your footage: `extract_frames.py` (pre-labelled frames for Roboflow), `train.py`, `evaluate.py`. Classes: player, ball, cone. The ball is the weakest part of Phase 1. |
 | **3** | Moving camera | Train a pitch-keypoint model (Roboflow sports `football-field-detection`) to re-estimate the homography every frame. This lets you keep the Falcon's auto-tracking on. |
 | **4** | Tactics | Formation detection (cluster average positions), pressing intensity, line height, Voronoi space control, pass networks, sequences that lead to shots |
 | **5** | Live dashboard | Web UI (FastAPI + WebSocket) showing the minimap, live stats and a timeline. Feed events into the RSM Match Logger (`../index.html`) |
@@ -131,7 +131,11 @@ soccer_analyzer/
   analytics.py  stats: distance/speed, heatmaps, ball path, possession, passes, team shape
   report.py     writes CSVs and plots
   viz.py        overlays, minimap, matplotlib pitch plots
-scripts/        calibrate.py, analyze.py, live.py
+  ball.py       picks the real ball among candidates (cones, spare balls)
+  stitch.py     joins broken tracks, drops coach/bench, cuts tracks at ID swaps
+  occlusion.py  re-places feet of players whose legs are hidden
+  dataset.py    frame selection and label files for training (Phase 2)
+scripts/        calibrate.py, analyze.py, live.py, extract_frames.py, train.py, evaluate.py
 tests/          synthetic-data tests (no GPU needed)
 ```
 

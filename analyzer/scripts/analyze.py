@@ -35,11 +35,16 @@ def load_config(path: Path) -> dict:
     return yaml.safe_load(path.read_text()) if path.exists() else {}
 
 
+def weights_path(name: str) -> str:
+    """A trained model path relative to the analyzer folder, or a stock name Ultralytics downloads."""
+    local = ROOT / name
+    return str(local) if local.exists() else name
+
+
 def make_tracker(cfg: dict) -> Tracker:
     m = cfg.get("model", {})
-    return Tracker(weights=m.get("weights", "yolo11m.pt"), imgsz=m.get("imgsz", 1280),
-                   conf=m.get("conf", 0.25), player_ids=m.get("player_class_ids", [0]),
-                   ball_ids=m.get("ball_class_ids", [32]), device=m.get("device"),
+    return Tracker(weights=weights_path(m.get("weights", "yolo11m.pt")), imgsz=m.get("imgsz", 1280),
+                   conf=m.get("conf", 0.25), device=m.get("device"),
                    tracker=str(ROOT / m.get("tracker", "trackers/bytetrack_soccer.yaml")))
 
 

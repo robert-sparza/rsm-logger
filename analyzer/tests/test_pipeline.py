@@ -212,3 +212,43 @@ def test_colour_ignored_for_lying_or_overlapping_players():
     assert reliable_colour_box(upright, [upright])
     assert not reliable_colour_box(lying, [lying])
     assert not reliable_colour_box(upright, [upright, other])
+
+
+def test_frame_selection_prefers_hard_frames_and_spreads_the_rest():
+    from soccer_analyzer.dataset import select_frames
+    cands = [(i, i * 0.5, 5.0 if i in (10, 30, 50) else 0.0) for i in range(200)]   # 100 s of candidates
+    chosen = select_frames(cands, n=20, min_gap_s=1.0)
+    assert len(chosen) == 20 and {10, 30, 50} <= set(chosen)
+    times = sorted(c * 0.5 for c in chosen)
+    assert min(b - a for a, b in zip(times, times[1:])) >= 1.0
+
+
+def test_crowded_frame_scores_higher():
+    from soccer_analyzer.dataset import frame_score
+    apart = [(0, 0, 40, 100), (300, 0, 340, 100)]
+    bunched = [(0, 0, 40, 100), (30, 5, 70, 105)]
+    ball_at_feet = [(42, 92, 52, 102)]
+    assert frame_score(bunched, [], []) > frame_score(apart, [], [])
+    assert frame_score(apart, ball_at_feet, []) > frame_score(apart, [], [])
+
+
+def test_yolo_lines_and_roboflow_yaml(tmp_path):
+    from soccer_analyzer.dataset import fix_roboflow_yaml, yolo_lines
+    import yaml
+    line = yolo_lines([(1, (90, 40, 110, 60)), (0, (-10, 0, 0, 5))], 200, 100)
+    assert line == ["1 0.500000 0.500000 0.100000 0.200000"]          # box fully outside is dropped
+    for split in ("train", "valid"):
+        (tmp_path / split / "images").mkdir(parents=True)
+    (tmp_path / "data.yaml").write_text("train: ../train/images\nval: ../valid/images\ntest: ../test/images\n"
+                                        "nc: 3\nnames: ['ball', 'cone', 'player']\n")
+    d = yaml.safe_load(fix_roboflow_yaml(tmp_path / "data.yaml").read_text())
+    assert d["train"] == str(tmp_path / "train" / "images") and d["val"] == str(tmp_path / "valid" / "images")
+    assert "test" not in d and d["names"] == ["ball", "cone", "player"]
+
+
+def test_class_ids_by_name_for_stock_and_trained_models():
+    from soccer_analyzer.tracking import BALL_NAMES, PLAYER_NAMES, class_ids
+    coco = {0: "person", 32: "sports ball", 2: "car"}
+    ours = {0: "ball", 1: "cone", 2: "player"}          # Roboflow sorts names alphabetically
+    assert class_ids(coco, PLAYER_NAMES) == {0} and class_ids(coco, BALL_NAMES) == {32}
+    assert class_ids(ours, PLAYER_NAMES) == {2} and class_ids(ours, BALL_NAMES) == {0}

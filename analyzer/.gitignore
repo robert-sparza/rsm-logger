@@ -5,3 +5,4 @@ data/videos/*
 !data/videos/.gitkeep
 runs/
 *.pt
+data/datasets/

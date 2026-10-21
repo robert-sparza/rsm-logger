@@ -8,9 +8,11 @@ from typing import Iterator
 import cv2
 import numpy as np
 
-# COCO class ids used by the stock YOLO weights. A fine-tuned football model
-# (see README, Phase 2) will have its own ids; set them in config.yaml.
-COCO_PERSON, COCO_BALL = 0, 32
+# Class names understood as players / balls: the stock COCO weights call them
+# "person" / "sports ball", our own trained model (Phase 2) "player" / "ball".
+# Ids are looked up from the model's own names, so switching weights needs no id edits.
+PLAYER_NAMES = ("person", "player", "goalkeeper")
+BALL_NAMES = ("sports ball", "ball")
 DEFAULT_TRACKER = str(Path(__file__).resolve().parents[1] / "trackers" / "bytetrack_soccer.yaml")
 
 
@@ -28,14 +30,23 @@ class Detection:
         return ((x1 + x2) / 2, y2)
 
 
+def class_ids(model_names: dict[int, str], wanted: tuple[str, ...] | list[str]) -> set[int]:
+    """Ids of the model classes whose name is in `wanted` (case-insensitive)."""
+    wanted = {w.lower() for w in wanted}
+    return {i for i, n in model_names.items() if n.lower() in wanted}
+
+
 class Tracker:
     def __init__(self, weights: str = "yolo11m.pt", imgsz: int = 1280, conf: float = 0.25,
-                 player_ids=(COCO_PERSON,), ball_ids=(COCO_BALL,), device: str | int | None = None,
+                 player_names=PLAYER_NAMES, ball_names=BALL_NAMES, device: str | int | None = None,
                  tracker: str = DEFAULT_TRACKER):
         from ultralytics import YOLO  # imported lazily so tests don't need it
         self.model = YOLO(weights)
         self.imgsz, self.conf, self.device, self.tracker = imgsz, conf, device, tracker
-        self.player_ids, self.ball_ids = set(player_ids), set(ball_ids)
+        self.player_ids = class_ids(self.model.names, player_names)
+        self.ball_ids = class_ids(self.model.names, ball_names)
+        if not self.player_ids:
+            raise ValueError(f"{weights} has no player class; its classes are {list(self.model.names.values())}")
 
     def step(self, frame: np.ndarray) -> list[Detection]:
         res = self.model.track(frame, persist=True, tracker=self.tracker, imgsz=self.imgsz,
