@@ -35,38 +35,46 @@ class _StaticSpot:
     y: float
     first: int
     last: int
+    confirmed: bool = False
 
 
 class BallSelector:
-    def __init__(self, static_frames: int = 90, radius_px: float = 12.0, gap_frames: int = 150,
-                 memory_frames: int = 30):
-        self.static_frames = static_frames      # ~3 s at 30 fps without moving = not the ball in play
-        # Cones are detected on and off (confidence near the threshold), so a spot keeps its
-        # history through dropouts of up to gap_frames (~5 s) instead of resetting.
+    def __init__(self, static_frames: int = 45, radius_px: float = 12.0, gap_frames: int = 150,
+                 memory_frames: int = 30, confirmed_memory_frames: int = 1800):
+        self.static_frames = static_frames      # ~1.5 s at 30 fps without moving = not the ball in play
+        # Spare balls and cones are detected on and off, so a spot keeps its history through
+        # dropouts of up to gap_frames (~5 s); once confirmed still, it is remembered for
+        # confirmed_memory_frames (~60 s) so it isn't picked again each time it reappears.
+        # radius_px is the minimum; the radius also grows with the ball's size in the image
+        # (a ball near a 4K camera jitters more pixels than a far one).
+        self.confirmed_memory_frames = confirmed_memory_frames
         self.radius_px = radius_px
         self.gap_frames = gap_frames
         self.memory_frames = memory_frames
         self.spots: list[_StaticSpot] = []
         self.last: tuple[int, float, float] | None = None   # frame, x, y of last chosen ball
 
-    def _is_static(self, frame_idx: int, x: float, y: float) -> bool:
+    def _is_static(self, frame_idx: int, x: float, y: float, size: float) -> bool:
+        radius = max(self.radius_px, 0.5 * size)
         for s in self.spots:
-            if np.hypot(s.x - x, s.y - y) <= self.radius_px:
-                if frame_idx - s.last > self.gap_frames:
+            if np.hypot(s.x - x, s.y - y) <= radius:
+                if not s.confirmed and frame_idx - s.last > self.gap_frames:
                     s.first = frame_idx
                 s.last = frame_idx
-                return s.last - s.first >= self.static_frames
+                s.confirmed = s.confirmed or s.last - s.first >= self.static_frames
+                return s.confirmed
         self.spots.append(_StaticSpot(x, y, frame_idx, frame_idx))
         return False
 
     def select(self, frame_idx: int, candidates):
         """candidates: list of (detection, on_pitch). Returns the chosen detection or None."""
-        self.spots = [s for s in self.spots if frame_idx - s.last <= self.gap_frames]
+        self.spots = [s for s in self.spots
+                      if frame_idx - s.last <= (self.confirmed_memory_frames if s.confirmed else self.gap_frames)]
         eligible = []
         for det, on_pitch in candidates:
             x1, y1, x2, y2 = det.box
             cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-            static = self._is_static(frame_idx, cx, cy)
+            static = self._is_static(frame_idx, cx, cy, max(x2 - x1, y2 - y1))
             if on_pitch and not static:
                 eligible.append((det, cx, cy))
         if not eligible:

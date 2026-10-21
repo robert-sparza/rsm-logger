@@ -46,7 +46,8 @@ class MatchPipeline:
         self.team_warmup_frames = team_warmup_frames
         self.color_every = color_every
         self.pitch_margin = pitch_margin
-        self.ball = BallSelector(static_frames=int(3 * fps), gap_frames=int(5 * fps), memory_frames=int(fps))
+        self.ball = BallSelector(static_frames=int(1.5 * fps), gap_frames=int(5 * fps), memory_frames=int(fps),
+                                 confirmed_memory_frames=int(60 * fps))
         self.reject_cone_colours = reject_cone_colours
         self.rows: list[dict] = []
         self._n = 0

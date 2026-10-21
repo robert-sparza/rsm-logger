@@ -269,3 +269,22 @@ def test_roboflow_yaml_found_one_folder_deeper_and_clear_error_for_label_batch(t
     (batch / "data.yaml").write_text("names: [player, ball, cone]\n")
     with pytest.raises(FileNotFoundError, match="extract_frames"):
         fix_roboflow_yaml(batch / "data.yaml")
+
+
+def test_confirmed_spare_ball_stays_ignored_after_long_dropout():
+    sel = BallSelector(static_frames=30, gap_frames=50, memory_frames=10, confirmed_memory_frames=1000)
+    spare = Detection(-1, "ball", (500, 300, 520, 320), 0.9)
+    for f in range(40):                                   # seen still for 40 frames -> confirmed
+        sel.select(f, [(spare, True)])
+    for f in range(40, 340):                              # gone for 300 frames (> gap_frames)
+        sel.select(f, [])
+    assert sel.select(340, [(spare, True)]) is None       # back again: still ignored
+
+
+def test_big_near_ball_jitter_is_the_same_spot():
+    sel = BallSelector(static_frames=30, gap_frames=50, memory_frames=10)
+    picks = []
+    for f in range(60):                                   # 60 px ball near the camera, jitters +-7 px
+        dy = 7 if f % 2 else -7
+        picks.append(sel.select(f, [(Detection(-1, "ball", (1000, 1500 + dy, 1060, 1560 + dy), 0.9), True)]))
+    assert all(p is None for p in picks[35:])

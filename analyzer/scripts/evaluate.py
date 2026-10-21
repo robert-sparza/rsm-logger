@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from analyze import weights_path  # noqa: E402
+from analyze import ROOT, weights_path  # noqa: E402
 from soccer_analyzer.ball import cone_colored  # noqa: E402
 from soccer_analyzer.pitch import Homography  # noqa: E402
 from soccer_analyzer.tracking import BALL_NAMES, PLAYER_NAMES, class_ids, read_frames  # noqa: E402
@@ -65,10 +65,16 @@ def main():
                      cones_as_ball / max(n_frames, 1)))
         print(f"done: {name}")
 
-    print(f"\n{'model':45s} {'imgsz':>5s} {'frames':>6s} {'players/frame':>14s} {'ball found':>10s} {'cones called ball/frame':>24s}")
+    lines = [f"{'model':45s} {'imgsz':>5s} {'frames':>6s} {'players/frame':>14s} {'ball found':>10s} {'cones called ball/frame':>24s}"]
     for name, imgsz, n, mp, sp, bf, cb in rows:
-        print(f"{name[-45:]:45s} {imgsz:5d} {n:6d} {mp:8.1f} +-{sp:4.1f} {bf:9.0%} {cb:24.2f}")
-    print("\nplayers/frame: steadier (small +-) is better. ball found: higher is better. cones called ball: lower is better.")
+        lines.append(f"{name[-45:]:45s} {imgsz:5d} {n:6d} {mp:8.1f} +-{sp:4.1f} {bf:9.0%} {cb:24.2f}")
+    lines.append("players/frame: steadier (small +-) is better. ball found: higher is better. "
+                 "cones called ball: lower is better.")
+    print("\n" + "\n".join(lines))
+    out = ROOT / "runs" / f"evaluate_{Path(args.video).stem}.txt"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text("\n".join(lines) + "\n")
+    print(f"\nSaved to {out}")
 
 
 if __name__ == "__main__":
