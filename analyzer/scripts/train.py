@@ -24,7 +24,7 @@ def main():
     ap.add_argument("--model", default="yolo11s.pt",
                     help="starting weights: yolo11s.pt (fits 8 GB) or yolo11m.pt (better, needs --imgsz 1280)")
     # Measured on an RTX 3060 Ti (8 GB) with yolo11s: 1920 px uses 4 GB per image, so 2 images
-    # don't fit and Ultralytics' automatic batch search crashes. 1600 px x 2 images uses ~5.5 GB.
+    # don't fit and Ultralytics' automatic batch search crashes. 1600 px x 2 images: ~5.5 GB (estimated).
     ap.add_argument("--imgsz", type=int, default=1600,
                     help="training resolution; high, because the ball is only a few pixels wide")
     ap.add_argument("--epochs", type=int, default=100)
