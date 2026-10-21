@@ -252,3 +252,20 @@ def test_class_ids_by_name_for_stock_and_trained_models():
     ours = {0: "ball", 1: "cone", 2: "player"}          # Roboflow sorts names alphabetically
     assert class_ids(coco, PLAYER_NAMES) == {0} and class_ids(coco, BALL_NAMES) == {32}
     assert class_ids(ours, PLAYER_NAMES) == {2} and class_ids(ours, BALL_NAMES) == {0}
+
+
+def test_roboflow_yaml_found_one_folder_deeper_and_clear_error_for_label_batch(tmp_path):
+    from soccer_analyzer.dataset import fix_roboflow_yaml
+    import pytest
+    import yaml
+    (tmp_path / "Soccer.v1i.yolov11" / "train" / "images").mkdir(parents=True)
+    (tmp_path / "Soccer.v1i.yolov11" / "valid" / "images").mkdir(parents=True)
+    (tmp_path / "data.yaml").write_text("names: ['ball', 'cone', 'player']\nnc: 3\n")
+    d = yaml.safe_load(fix_roboflow_yaml(tmp_path / "data.yaml").read_text())
+    assert d["train"].endswith("train/images") and d["val"].endswith("valid/images")
+    batch = tmp_path / "batch"
+    (batch / "images").mkdir(parents=True)
+    (batch / "labels").mkdir()
+    (batch / "data.yaml").write_text("names: [player, ball, cone]\n")
+    with pytest.raises(FileNotFoundError, match="extract_frames"):
+        fix_roboflow_yaml(batch / "data.yaml")

@@ -99,15 +99,32 @@ def fix_roboflow_yaml(data_yaml: Path) -> Path:
     data_yaml = Path(data_yaml).resolve()
     root = data_yaml.parent
     d = yaml.safe_load(data_yaml.read_text())
-    for split, folder in (("train", "train"), ("val", "valid"), ("test", "test")):
-        images = root / folder / "images"
-        if images.is_dir():
+
+    def find(names):
+        """<root>/<name>/images, also one or two folders deeper (extra layer from unzipping)."""
+        for depth in ("", "*/", "*/*/"):
+            for name in names:
+                hits = sorted(root.glob(f"{depth}{name}/images"))
+                if hits:
+                    return hits[0]
+        return None
+
+    for split, names in (("train", ("train",)), ("val", ("valid", "val")), ("test", ("test",))):
+        images = find(names)
+        if images is not None:
             d[split] = str(images)
         elif split in d and split != "train":
             d.pop(split)
     d.pop("path", None)
     if "train" not in d or not Path(d["train"]).is_dir():
-        raise FileNotFoundError(f"No train/images folder next to {data_yaml}")
+        if (root / "images").is_dir() and (root / "labels").is_dir():
+            raise FileNotFoundError(
+                f"{root} looks like the label batch made by extract_frames.py (images/ + labels/), "
+                "not a Roboflow export. Export from Roboflow (Versions > Export Dataset > YOLOv11), "
+                "unzip that into its own folder and pass its data.yaml.")
+        found = ", ".join(sorted(p.name for p in root.iterdir())) or "nothing"
+        raise FileNotFoundError(f"No train/images folder found under {root} (it contains: {found}). "
+                                "Unzip the Roboflow YOLOv11 export there and pass its data.yaml.")
     d.setdefault("val", d["train"])
     out = root / "data_fixed.yaml"
     out.write_text(yaml.safe_dump(d, sort_keys=False))
