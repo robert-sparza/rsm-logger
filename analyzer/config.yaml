@@ -6,6 +6,7 @@ model:
   weights: yolo11m.pt
   imgsz: 1280            # small, far-away players need high resolution; try 1920 for 4K footage
   conf: 0.25
+  ball_conf: 0.15        # balls are small: accept less confident ball detections (the ball filter cleans up)
   device: 0              # GPU 0; use "cpu" to test without CUDA
   tracker: trackers/bytetrack_soccer.yaml  # longer memory so IDs survive occlusions
   # tracker: trackers/botsort_moving_camera.yaml  # use this for auto-tracking / zooming footage

@@ -44,7 +44,7 @@ def weights_path(name: str) -> str:
 def make_tracker(cfg: dict) -> Tracker:
     m = cfg.get("model", {})
     return Tracker(weights=weights_path(m.get("weights", "yolo11m.pt")), imgsz=m.get("imgsz", 1280),
-                   conf=m.get("conf", 0.25), device=m.get("device"),
+                   conf=m.get("conf", 0.25), ball_conf=m.get("ball_conf", 0.15), device=m.get("device"),
                    tracker=str(ROOT / m.get("tracker", "trackers/bytetrack_soccer.yaml")))
 
 

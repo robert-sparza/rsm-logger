@@ -36,35 +36,55 @@ def class_ids(model_names: dict[int, str], wanted: tuple[str, ...] | list[str]) 
     return {i for i, n in model_names.items() if n.lower() in wanted}
 
 
+def make_mot_tracker(tracker_yaml: str):
+    """Ultralytics' ByteTrack/BoT-SORT, built from a tracker yaml, for us to feed directly."""
+    from ultralytics.trackers.track import TRACKER_MAP
+    from ultralytics.utils import YAML, IterableSimpleNamespace
+    from ultralytics.utils.checks import check_yaml
+    cfg = IterableSimpleNamespace(**YAML.load(check_yaml(tracker_yaml)))
+    cfg.device = None
+    cls = TRACKER_MAP[cfg.tracker_type]
+    try:
+        return cls(args=cfg)
+    except TypeError:                       # older Ultralytics versions also take frame_rate
+        return cls(args=cfg, frame_rate=30)
+
+
 class Tracker:
+    """Detects players and balls; tracks only the players.
+
+    The ball is NOT sent through the multi-object tracker: in Ultralytics' track
+    mode only detections the tracker has linked into a track are returned, and a
+    small fast ball barely overlaps itself between frames, so most ball
+    detections were silently dropped. We detect once, track the players
+    ourselves, and hand every ball detection to BallSelector.
+    """
+
     def __init__(self, weights: str = "yolo11m.pt", imgsz: int = 1280, conf: float = 0.25,
                  player_names=PLAYER_NAMES, ball_names=BALL_NAMES, device: str | int | None = None,
-                 tracker: str = DEFAULT_TRACKER):
+                 tracker: str = DEFAULT_TRACKER, ball_conf: float = 0.15):
         from ultralytics import YOLO  # imported lazily so tests don't need it
         self.model = YOLO(weights)
-        self.imgsz, self.conf, self.device, self.tracker = imgsz, conf, device, tracker
+        self.imgsz, self.conf, self.ball_conf, self.device = imgsz, conf, ball_conf, device
         self.player_ids = class_ids(self.model.names, player_names)
         self.ball_ids = class_ids(self.model.names, ball_names)
         if not self.player_ids:
             raise ValueError(f"{weights} has no player class; its classes are {list(self.model.names.values())}")
+        self.mot = make_mot_tracker(tracker)
 
     def step(self, frame: np.ndarray) -> list[Detection]:
-        res = self.model.track(frame, persist=True, tracker=self.tracker, imgsz=self.imgsz,
-                               conf=self.conf, device=self.device, verbose=False,
-                               classes=sorted(self.player_ids | self.ball_ids))[0]
+        res = self.model.predict(frame, imgsz=self.imgsz, conf=min(self.conf, self.ball_conf), device=self.device,
+                                 verbose=False, classes=sorted(self.player_ids | self.ball_ids))[0]
         out: list[Detection] = []
-        if res.boxes is None or len(res.boxes) == 0:
-            return out
-        boxes = res.boxes.xyxy.cpu().numpy()
-        classes = res.boxes.cls.cpu().numpy().astype(int)
-        confs = res.boxes.conf.cpu().numpy()
-        ids = res.boxes.id.cpu().numpy().astype(int) if res.boxes.id is not None else -np.ones(len(boxes), int)
-        for box, c, p, tid in zip(boxes, classes, confs, ids):
-            if c in self.ball_ids:
-                # Every candidate is returned; BallSelector picks the real one.
-                out.append(Detection(-1, "ball", tuple(box), float(p)))
-            elif c in self.player_ids and tid >= 0:
-                out.append(Detection(int(tid), "player", tuple(box), float(p)))
+        boxes = res.boxes.cpu().numpy()
+        cls = boxes.cls.astype(int)
+        players = boxes[np.isin(cls, list(self.player_ids)) & (boxes.conf >= self.conf)]
+        tracks = self.mot.update(players, frame)            # rows: x1, y1, x2, y2, id, score, cls, idx
+        for t in np.asarray(tracks).reshape(-1, 8) if len(tracks) else []:
+            out.append(Detection(int(t[4]), "player", tuple(float(v) for v in t[:4]), float(t[5])))
+        balls = np.isin(cls, list(self.ball_ids)) & (boxes.conf >= self.ball_conf)
+        for box, p in zip(boxes.xyxy[balls], boxes.conf[balls]):
+            out.append(Detection(-1, "ball", tuple(float(v) for v in box), float(p)))
         return out
 
 
