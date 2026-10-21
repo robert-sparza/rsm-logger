@@ -75,6 +75,11 @@ python scripts\train.py data\datasets\soccer-v1\data.yaml
 - The default is `yolo11s.pt` at 1600 px with 2 images per step, which fits in 8 GB (1920 px
   needs 4 GB per image and doesn't fit 2). For the bigger `--model yolo11m.pt`, add `--imgsz 1280`.
 - If you get `CUDA out of memory`, close other GPU programs or lower to `--imgsz 1280`.
+- Small datasets train with the pretrained backbone frozen (`--freeze 10`) and a low learning
+  rate (AdamW, 0.001). Training the whole network on 30 images diverged after 8 epochs: the losses
+  shot up and mAP fell to 0. Once you have ~500+ images, try `--freeze 0`.
+- If `results.png` still shows the losses suddenly jumping up, add `--no-amp --imgsz 1280`
+  (full precision, more stable, uses more memory).
 - Training stops early once it stops improving. The result is
   `runs\train\soccer-v1\weights\best.pt`, and the script prints what to put in `config.yaml`.
 - `runs\train\soccer-v1\results.png` shows the learning curves. In

@@ -30,6 +30,16 @@ def main():
     ap.add_argument("--epochs", type=int, default=100)
     ap.add_argument("--batch", type=int, default=2,
                     help="images per step; 2 fits 8 GB at 1600 px. Out of memory: lower --imgsz")
+    # Small datasets (tens to a few hundred images): the first run on 30 images with the
+    # defaults (whole network, auto optimizer) learned for ~8 epochs and then diverged (losses
+    # x10, NaN in validation). Freezing the pretrained backbone and a low AdamW learning rate
+    # is the usual stable recipe; unfreeze (--freeze 0) once you have ~500+ images.
+    ap.add_argument("--freeze", type=int, default=10,
+                    help="freeze the first N layers (10 = the backbone); 0 trains everything")
+    ap.add_argument("--optimizer", default="AdamW")
+    ap.add_argument("--lr0", type=float, default=0.001, help="initial learning rate")
+    ap.add_argument("--no-amp", action="store_true",
+                    help="train in full precision (more stable, ~1.5-2x memory; use with --imgsz 1280)")
     ap.add_argument("--name", help="run name (default: the dataset folder name)")
     ap.add_argument("--device", default="0")
     args = ap.parse_args()
@@ -40,7 +50,9 @@ def main():
     model = YOLO(args.model)
     model.train(data=str(data), imgsz=args.imgsz, epochs=args.epochs, batch=args.batch,
                 patience=30, device=args.device, project=str(ROOT / "runs" / "train"), name=name,
-                exist_ok=True, workers=4, close_mosaic=10, plots=True)
+                exist_ok=True, workers=4, close_mosaic=10, plots=True,
+                freeze=args.freeze or None, optimizer=args.optimizer, lr0=args.lr0, cos_lr=True,
+                warmup_epochs=3, amp=not args.no_amp)
 
     best = ROOT / "runs" / "train" / name / "weights" / "best.pt"
     print(f"\nDone. Best model: {best}")
