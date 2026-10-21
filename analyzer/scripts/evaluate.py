@@ -24,8 +24,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("video")
     ap.add_argument("--models", nargs="+", required=True)
-    ap.add_argument("--imgsz", nargs="+", type=int, default=[1280, 1920],
-                    help="resolution per model (stock 1280, trained 1920); the last value repeats")
+    ap.add_argument("--imgsz", nargs="+", type=int, default=[1280, 1600],
+                    help="resolution per model (stock 1280, trained 1600); the last value repeats")
     ap.add_argument("--every", type=float, default=1.0)
     ap.add_argument("--calib", help="count only players on the pitch")
     ap.add_argument("--device", default="0")

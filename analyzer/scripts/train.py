@@ -22,11 +22,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("data", help="data.yaml from the Roboflow export")
     ap.add_argument("--model", default="yolo11s.pt",
-                    help="starting weights: yolo11s.pt (fast, fits 8 GB at 1920 px) or yolo11m.pt (better, slower)")
-    ap.add_argument("--imgsz", type=int, default=1920,
+                    help="starting weights: yolo11s.pt (fits 8 GB) or yolo11m.pt (better, needs --imgsz 1280)")
+    # Measured on an RTX 3060 Ti (8 GB) with yolo11s: 1920 px uses 4 GB per image, so 2 images
+    # don't fit and Ultralytics' automatic batch search crashes. 1600 px x 2 images uses ~5.5 GB.
+    ap.add_argument("--imgsz", type=int, default=1600,
                     help="training resolution; high, because the ball is only a few pixels wide")
     ap.add_argument("--epochs", type=int, default=100)
-    ap.add_argument("--batch", type=int, default=-1, help="-1 = pick the largest batch that fits the GPU")
+    ap.add_argument("--batch", type=int, default=2,
+                    help="images per step; 2 fits 8 GB at 1600 px. Out of memory: lower --imgsz")
     ap.add_argument("--name", help="run name (default: the dataset folder name)")
     ap.add_argument("--device", default="0")
     args = ap.parse_args()

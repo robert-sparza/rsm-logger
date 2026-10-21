@@ -72,9 +72,9 @@ skipping balls is fine.
 python scripts\train.py data\datasets\soccer-v1\data.yaml
 ```
 
-- The default starts from `yolo11s.pt` at 1920 px, which fits in 8 GB. For a bigger,
-  slower model add `--model yolo11m.pt --batch 2`.
-- If you get `CUDA out of memory`, add `--batch 2`, or lower to `--imgsz 1600`.
+- The default is `yolo11s.pt` at 1600 px with 2 images per step, which fits in 8 GB (1920 px
+  needs 4 GB per image and doesn't fit 2). For the bigger `--model yolo11m.pt`, add `--imgsz 1280`.
+- If you get `CUDA out of memory`, close other GPU programs or lower to `--imgsz 1280`.
 - Training stops early once it stops improving. The result is
   `runs\train\soccer-v1\weights\best.pt`, and the script prints what to put in `config.yaml`.
 - `runs\train\soccer-v1\results.png` shows the learning curves. In
@@ -83,7 +83,7 @@ python scripts\train.py data\datasets\soccer-v1\data.yaml
 ## 6. Compare with the stock detector
 
 ```bat
-python scripts\evaluate.py data\videos\training.mp4 --models yolo11m.pt runs\train\soccer-v1\weights\best.pt --imgsz 1280 1920 --calib runs\calib_small.json
+python scripts\evaluate.py data\videos\training.mp4 --models yolo11m.pt runs\train\soccer-v1\weights\best.pt --imgsz 1280 1600 --calib runs\calib_small.json
 ```
 
 It prints, for each model, the players per frame (steadier is better), the % of frames
@@ -96,7 +96,7 @@ In `config.yaml`:
 
 ```yaml
   weights: runs/train/soccer-v1/weights/best.pt
-  imgsz: 1920
+  imgsz: 1600
 ```
 
 Run `analyze.py` as usual. Class ids don't need changing: the analyzer finds `player` and
