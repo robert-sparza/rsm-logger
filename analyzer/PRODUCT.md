@@ -131,6 +131,40 @@ product is a **report with clips**, not a CSV.
 Alternatives if "Coach" feels generic: *RSM Match Lab*, *RSM Pitch IQ*, *RSM Táctica*.
 Trademark and domain availability haven't been checked.
 
+## 7. Update, 25 Oct 2026: libraries, the coach summary, SAM 3
+
+### Open-source pieces worth using
+- **kloppy** (PySport) converts tracking data into one standard format. If `tracks.csv` is exported through it, every other library below works on our data without custom code.
+- **floodlight** computes distance, velocity, acceleration, metabolic power and Voronoi space control from tracking data.
+- **mplsoccer** draws the pitch plots (heat maps, pass maps, shape plots).
+- **DataBallPy** loads and synchronises event and tracking data for one game.
+- **Tryolabs' Norfair possession code** shows two ways to define possession: by passes and by time with the ball. Pick one and say which one the report uses.
+- **FIFA's Enhanced Football Intelligence** has an open-source implementation (phases of play, line breaks, possession control). It is a thesis, so check the code before relying on it.
+- **Pressing intensity from tracking** (Bekkers, 2025) uses player velocities and reaction times. It needs good speeds, so it comes after calibration is solid.
+- I found **no mature open-source pass or event detection from tracking data**. We write those as rules on the ball path and the players, as planned in section 3.
+
+### From numbers to a summary a coach can use
+1. **Three layers.** (a) Three sentences: what happened. (b) The evidence: the numbers and a clip for each. (c) The detail: per player and per minute. The coach reads (a) and opens (b) only when they doubt it.
+2. **Say which thresholds were used.** Youth research does not agree on one speed band. Fixed cutoffs of about 19.8 km/h (high-speed running) and 25.2 km/h (sprint) are common, but individual cutoffs as a share of each player's own top speed give different totals, and there is no agreed best model. My suggestion, still to confirm with a coach: show distance, **distance per minute**, and each player's **top speed in the session**, and mark the band used in every report. Fixed adult cutoffs may be too high for young players.
+3. **Compare with the team's own history**, not with published benchmarks. The studies use different methods and cannot be compared directly.
+4. **Training-game measures** (small-sided games) from the research: team **surface area**, **area per player**, **distance between team centres** (centroids), **stretch index** (average distance from the centre), and **length-to-width ratio**. They show compactness and width in one number each. Our summary already has team width and depth.
+5. **Write the sentences from the numbers, not from a language model's memory.** A rule picks the finding ("distance per minute fell 18% in the second block"), a template writes the sentence, and each sentence links to its numbers and clip. A language model can reword it, never add a number. SciSports ships AI summaries with a note that they can contain errors, and a newsroom pipeline found wrong stat references to be the main failure. The same risk applies here.
+6. **Be honest about accuracy.** Speed and distance from video are noisy. The report should print an error range, and flag a track as "uncertain" when the ID was stitched or the player was occluded.
+
+### SAM 3
+- **What it is:** a model that finds, masks and tracks every object matching a text phrase, in images and video. Roboflow offers it as **Auto Label**: you type a prompt per class ("person", "ball", "cone"), test the confidence on a few images, then run the batch.
+- **Where it helps us:** pre-labelling new batches (night footage, multi-ball drills, new courts) faster than fixing our detector's guesses, and masks for a cleaner shirt-colour read in the team split.
+- **Unknown:** how well it finds a small ball at night. I found nothing on small objects, and users report batches that returned 0 annotations. **Test it on 20 frames before running a batch.**
+- **Not for live use:** its video speed is near real time for about 5 objects, and a game has 14 or more. Use it offline for labelling and as a check, not in the live view.
+- Your own detector stays the one that runs the analysis. SAM 3 would only speed up and improve the labels it trains on.
+
+### Next steps for this section
+1. Export `tracks.csv` through kloppy so floodlight and mplsoccer can use it.
+2. Add distance per minute, top speed and a visible speed band to `player_stats.csv`.
+3. Add compactness numbers (area per player, stretch index) to `summary.json`.
+4. Write the three-sentence summary generator from rules and templates.
+5. Test SAM 3 Auto Label on the first moving XbotGo clip.
+
 ## Sources
 
 - Veo Analytics 2 overview: https://support.veo.com/hc/en-us/articles/11873714080657-Veo-Analytics-2-Overview-and-features
@@ -150,3 +184,20 @@ Trademark and domain availability haven't been checked.
 - SoccerNet challenge win (re-ID, numbers): https://www.unibw.de/vis/news/cvpr2023-soccernet
 - Recording minors, guidelines: https://kilkennygaa.ie/resources/game-recording-guidelines/
 - Sports data and minors (Leiden): https://www.universiteitleiden.nl/en/in-the-media/2025/06/does-collecting-sports-images-and-data-breach-privacy-laws
+- SAM 3 in Hugging Face Transformers (video): https://huggingface.co/docs/transformers/model_doc/sam3_video
+- SAM 3 paper: https://huggingface.co/papers/2511.16719
+- Roboflow Auto Label with SAM 3: https://docs.roboflow.com/changelog/explore-by-month/november-2025/auto-label-data-with-sam-3
+- Roboflow forum, SAM 3 auto label returning 0 annotations: https://discuss.roboflow.com/t/auto-label-with-sam-3-completed-with-0-annotations-but-consumed-credits/12302
+- kloppy: https://kloppy.readthedocs.io
+- floodlight: https://github.com/floodlight-sports/floodlight
+- DataBallPy: https://science.ecosyste.ms/projects/808331
+- Tryolabs possession with Norfair: https://tryolabs.com/blog/2022/10/17/measuring-soccer-ball-possession-ai-video-analytics
+- FIFA EFI open-source implementation: https://capuana.ifi.uzh.ch/publications/PDFs/24098_An_Open_Source_Implementation_of_FIFA_s_Enhanced_Football_Intelligence.pdf
+- Pressing intensity from tracking data (Bekkers): https://arxiv.org/pdf/2501.04712v2
+- PPDA explained: https://thexgfootballclub.substack.com/p/quantifying-the-intensity-of-high-press-tactics-in-football-with-ppda-37d1ee09f768
+- Youth speed thresholds, absolute vs individual: https://statsports.com/article/monitoring-high-speed-running-demands-in-youth-soccer-players-absolute-or-individualised-thresholds-a-case-study
+- Speed zone models in elite youth soccer: https://gupea.ub.gu.se/items/6e865c27-2003-4b3c-8090-97860c746c19
+- Narrative review of GPS load monitoring in male youth soccer: https://sponet.de/sponet/Record/4097972
+- Small-sided game tactical metrics by age group: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7084353/
+- SciSports AI match summaries: https://www.scisports.com/insight-in-an-instant-intelligence-the-moment-you-need-it
+- RAG post-match tactical reports: https://ricardoheredia.substack.com/p/building-a-rag-system-that-generates
