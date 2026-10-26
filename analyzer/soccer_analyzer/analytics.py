@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 MAX_SPEED_MS = 12.0         # faster than this is a tracking glitch, not a sprint
+MIN_ACTIVE_S = 10.0         # distance per minute is only reported for players followed at least this long
 POSSESSION_RADIUS_M = 2.0   # player this close to the ball "has" it
 
 
@@ -35,9 +36,13 @@ def player_stats(df: pd.DataFrame) -> pd.DataFrame:
     stats = pd.DataFrame({
         "team": g["team"].agg(lambda s: s.mode().iat[0] if len(s.mode()) else -1),
         "seconds_tracked": g["t"].agg(lambda s: s.max() - s.min()),
+        "active_s": p["dt"].where(valid).groupby(p["track_id"]).sum(),
         "distance_m": g["d"].sum(),
         "top_speed_kmh": g["v"].quantile(0.95) * 3.6,
     })
+    # Distance per minute counts only the time the player was actually followed (gaps where the track
+    # was lost don't dilute it), and is blank for players followed under 10 s.
+    stats["m_per_min"] = (stats.distance_m / stats.active_s * 60).where(stats.active_s >= MIN_ACTIVE_S)
     return stats.sort_values("distance_m", ascending=False)
 
 

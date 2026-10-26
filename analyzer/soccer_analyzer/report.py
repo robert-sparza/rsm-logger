@@ -42,6 +42,9 @@ def build_report(df: pd.DataFrame, out_dir: Path, pitch: Pitch | None = None) ->
         shape.to_csv(out_dir / f"shape_team{team}.csv", index=False)
         summary[f"team{team}_avg_width_m"] = round(float(shape.width_m.mean()), 1)
         summary[f"team{team}_avg_depth_m"] = round(float(shape.depth_m.mean()), 1)
+        pace = stats[(stats.team == team)].m_per_min.dropna()
+        if len(pace):
+            summary[f"team{team}_avg_m_per_min"] = round(float(pace.mean()), 1)
 
     ball = A.ball_track(on_pitch)
     ball.to_csv(out_dir / "ball.csv", index=False)

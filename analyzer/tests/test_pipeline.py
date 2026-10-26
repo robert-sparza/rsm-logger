@@ -1,3 +1,4 @@
+import pytest
 import sys
 from pathlib import Path
 
@@ -315,3 +316,38 @@ def test_moving_ball_beats_a_resting_ball_not_yet_confirmed():
         x = 600 + 10 * f
         rolling = Detection(-1, "ball", (x, 700, x + 20, 720), 0.4)
         assert sel.select(f, [(resting, True), (rolling, True)]) is rolling
+
+
+def _walkers(speed_ms: float = 3.0, seconds: float = 30, fps: int = 10):
+    """Two players: one jogging at speed_ms along the pitch, one standing; plus a ball."""
+    import pandas as pd
+    rows = []
+    for k in range(int(seconds * fps)):
+        t = k / fps
+        rows.append(dict(frame=k, t=t, track_id=1, cls="player", team=0, x=2 + speed_ms * t % 20, y=5.0, conf=0.9))
+        rows.append(dict(frame=k, t=t, track_id=2, cls="player", team=1, x=14.0, y=8.0, conf=0.9))
+        if k % 2 == 0:
+            rows.append(dict(frame=k, t=t, track_id=-1, cls="ball", team=-1, x=10.0, y=6.0, conf=0.5))
+    return pd.DataFrame(rows)
+
+
+def test_player_stats_distance_per_minute():
+    from soccer_analyzer.analytics import player_stats
+    s = player_stats(_walkers(3.0, 30))
+    assert abs(s.loc[1, "m_per_min"] - 3.0 * 60) < 12        # 3 m/s = 180 m per minute (wraps at 20 m once)
+    assert s.loc[2, "m_per_min"] < 1.0
+    short = player_stats(_walkers(3.0, 6))                    # followed under 10 s: no per-minute figure
+    assert short.m_per_min.isna().all()
+
+
+def test_kloppy_export_round_trip():
+    pytest.importorskip("kloppy")
+    from soccer_analyzer.export import to_kloppy
+    pitch = Pitch(28.5, 16.3)
+    ds = to_kloppy(_walkers(), pitch, 10.0)
+    assert len(ds.records) == 300 and len(ds.metadata.teams) == 2
+    f = ds.records[10]
+    xs = sorted(round(pd_.coordinates.x * 28.5, 1) for pd_ in f.players_data.values())
+    assert xs[-1] == 14.0 and 0 <= xs[0] <= 20
+    df = ds.to_df(engine="pandas")
+    assert len(df) == 300

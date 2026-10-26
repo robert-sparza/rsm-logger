@@ -164,3 +164,15 @@ tests/          synthetic-data tests (no GPU needed)
 For the coach-report work (see `PRODUCT.md`, section 7): with the venv active,
 `pip install -r requirements-extras.txt` installs kloppy, floodlight and mplsoccer.
 `analyze.py` does not need them.
+
+### Distance per minute and kloppy export
+
+`player_stats.csv` now has `active_s` (seconds the player was actually followed) and `m_per_min`
+(distance per minute over that time; blank under 10 s), and `summary.json` has each team's average.
+Treat the numbers as estimates: the video gives noisy positions, and short fragments of a track are
+the least reliable.
+
+```bat
+python scripts\export_kloppy.py runs\training --calib runs\calib_small.json
+```
+writes `runs\training\tracking_kloppy.csv` in kloppy's standard format (needs `requirements-extras.txt`).
