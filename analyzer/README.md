@@ -158,3 +158,9 @@ tests/          synthetic-data tests (no GPU needed)
 - Goalkeepers and referees get pushed into one of the two teams.
 - Anyone more than 1.5 m outside the lines is ignored (`analysis.pitch_margin` in config.yaml). This only works after calibration.
 - A ball in the air is projected as if it were on the ground.
+
+## Optional analysis libraries
+
+For the coach-report work (see `PRODUCT.md`, section 7): with the venv active,
+`pip install -r requirements-extras.txt` installs kloppy, floodlight and mplsoccer.
+`analyze.py` does not need them.

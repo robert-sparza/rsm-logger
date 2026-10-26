@@ -1,0 +1,6 @@
+# Optional analysis libraries (not needed to run analyze.py). Install with:
+#   pip install -r requirements-extras.txt
+kloppy>=3.19         # converts tracking data to a standard format
+floodlight>=1.2      # distance, speed, acceleration, space control
+mplsoccer>=1.8       # pitch plots
+# DataBallPy is left out: it needs pandas<3, which can clash with the main requirements.
