@@ -25,10 +25,10 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from analyze import ROOT, weights_path  # noqa: E402
+from analyze import ROOT, pitch_region, weights_path  # noqa: E402
 from soccer_analyzer.ball import BallSelector, cone_colored  # noqa: E402
 from soccer_analyzer.pitch import Homography  # noqa: E402
-from soccer_analyzer.tracking import BALL_NAMES, PLAYER_NAMES, Detection, class_ids, read_frames  # noqa: E402
+from soccer_analyzer.tracking import BALL_NAMES, PLAYER_NAMES, Detection, class_ids, merge_boxes, read_frames, tile_grid, tiled_boxes  # noqa: E402
 
 
 def still_picks(picks, candidates, fps: float, still_s: float = 1.5, max_gap_s: float = 0.5) -> np.ndarray:
@@ -59,7 +59,7 @@ def still_picks(picks, candidates, fps: float, still_s: float = 1.5, max_gap_s: 
 
 
 def evaluate_model(name: str, video: str, imgsz: int, stride: int, hom, device, max_seconds=None,
-                   conf: float = 0.25, ball_conf: float = 0.15) -> dict:
+                   conf: float = 0.25, ball_conf: float = 0.15, tile_size: int = 0) -> dict:
     from ultralytics import YOLO
     model = YOLO(weights_path(name))
     pids, bids = class_ids(model.names, PLAYER_NAMES), class_ids(model.names, BALL_NAMES)
@@ -69,6 +69,20 @@ def evaluate_model(name: str, video: str, imgsz: int, stride: int, hom, device, 
     selector = BallSelector(static_frames=int(1.5 * fps), gap_frames=int(5 * fps), memory_frames=int(fps),
                             confirmed_memory_frames=int(60 * fps))
     n, players, cones = 0, [], 0
+    region = pitch_region(hom) if (hom is not None and tile_size) else None
+    tile_cache: dict = {}
+
+    def tracker_tiles(frame):
+        key = frame.shape[:2]
+        if key not in tile_cache:
+            h, w = key
+            roi = None
+            if region is not None:
+                pad = 0.03 * max(w, h)
+                roi = (region[:, 0].min() - pad, region[:, 1].min() - pad, region[:, 0].max() + pad, region[:, 1].max() + pad)
+            tile_cache[key] = tile_grid(w, h, tile_size, 0.2, roi)
+        return tile_cache[key]
+
     picks, picks_near, candidates = [], [], []
     for idx, t, frame in read_frames(video, stride):
         if max_seconds and t > max_seconds:
@@ -76,7 +90,7 @@ def evaluate_model(name: str, video: str, imgsz: int, stride: int, hom, device, 
         res = model.predict(frame, imgsz=imgsz, conf=min(conf, ball_conf), device=device, verbose=False)[0]
         boxes = res.boxes.cpu().numpy()
         feet_xy = []
-        ball_cands = []
+        ball_boxes = []
         for box, c, p in zip(boxes.xyxy, boxes.cls.astype(int), boxes.conf):
             foot = np.array([[(box[0] + box[2]) / 2, box[3]]])
             xy = hom.to_pitch(foot)[0] if hom is not None else None
@@ -84,10 +98,20 @@ def evaluate_model(name: str, video: str, imgsz: int, stride: int, hom, device, 
             if c in pids and p >= conf and on:
                 feet_xy.append(xy)
             elif c in bids and p >= ball_conf:
-                if cone_colored(frame, box):
-                    cones += 1
-                    continue
-                ball_cands.append((Detection(-1, "ball", tuple(box), float(p)), on, xy))
+                ball_boxes.append((tuple(float(v) for v in box), float(p)))
+        if tile_size:
+            tiles = tracker_tiles(frame)
+            ball_boxes = merge_boxes(ball_boxes + tiled_boxes(model, frame, bids, ball_conf, tiles, device,
+                                                              imgsz=min(tile_size, imgsz)))
+        ball_cands = []
+        for box, p in ball_boxes:
+            foot = np.array([[(box[0] + box[2]) / 2, box[3]]])
+            xy = hom.to_pitch(foot)[0] if hom is not None else None
+            on = hom.on_pitch(xy[None], 1.5)[0] if hom is not None else True
+            if cone_colored(frame, box):
+                cones += 1
+                continue
+            ball_cands.append((Detection(-1, "ball", box, p), on, xy))
         n += 1
         players.append(len(feet_xy))
         for d, _, _ in ball_cands:
@@ -105,7 +129,7 @@ def evaluate_model(name: str, video: str, imgsz: int, stride: int, hom, device, 
     moving = ~still_picks(picks, candidates, fps)
     in_play = int(moving.sum())
     near = int(np.asarray(picks_near, bool)[moving].sum()) if in_play else 0
-    return dict(name=name, imgsz=imgsz, frames=n, players=np.mean(players), players_sd=np.std(players),
+    return dict(name=name + (f' +tile{tile_size}' if tile_size else ''), imgsz=imgsz, frames=n, players=np.mean(players), players_sd=np.std(players),
                 in_play=in_play / max(n, 1), near=(near / in_play) if (hom is not None and in_play) else None,
                 cones=cones / max(n, 1))
 
@@ -120,13 +144,15 @@ def main():
     ap.add_argument("--max-seconds", type=float)
     ap.add_argument("--calib", help="count only players on the pitch and check the ball is near a player")
     ap.add_argument("--device", default="0")
+    ap.add_argument("--tile", type=int, default=0, metavar="PX",
+                    help="also search for the ball in PX-px crops of the pitch (e.g. 1280); compare with and without")
     args = ap.parse_args()
 
     hom = Homography.load(args.calib) if args.calib else None
     rows = []
     for k, name in enumerate(args.models):
         imgsz = args.imgsz[min(k, len(args.imgsz) - 1)]
-        rows.append(evaluate_model(name, args.video, imgsz, args.stride, hom, args.device, args.max_seconds))
+        rows.append(evaluate_model(name, args.video, imgsz, args.stride, hom, args.device, args.max_seconds, tile_size=args.tile))
         print(f"done: {name}")
 
     lines = [f"{'model':42s} {'imgsz':>5s} {'frames':>6s} {'ball in play':>12s} {'near a player':>13s} "

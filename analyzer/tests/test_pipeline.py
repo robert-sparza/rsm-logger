@@ -351,3 +351,53 @@ def test_kloppy_export_round_trip():
     assert xs[-1] == 14.0 and 0 <= xs[0] <= 20
     df = ds.to_df(engine="pandas")
     assert len(df) == 300
+
+
+def test_tile_grid_covers_region_and_stays_in_frame():
+    from soccer_analyzer.tracking import tile_grid
+    W, H = 3840, 2160
+    for roi in (None, (500, 900, 3300, 1700), (0, 0, 1000, 700), (3000, 1800, 3840, 2160)):
+        tiles = tile_grid(W, H, 1280, 0.2, roi)
+        assert all(0 <= x1 < x2 <= W and 0 <= y1 < y2 <= H for x1, y1, x2, y2 in tiles)
+        assert all(x2 - x1 <= 1280 and y2 - y1 <= 1280 for x1, y1, x2, y2 in tiles)
+        r = roi or (0, 0, W, H)
+        covered = np.zeros((H // 20 + 1, W // 20 + 1), bool)
+        for x1, y1, x2, y2 in tiles:
+            covered[y1 // 20:-(-y2 // 20), x1 // 20:-(-x2 // 20)] = True
+        assert covered[int(r[1]) // 20:int(r[3]) // 20, int(r[0]) // 20:int(r[2]) // 20].all()
+    assert len(tile_grid(W, H, 1280, 0.2, (500, 900, 3300, 1700))) < len(tile_grid(W, H, 1280, 0.2))
+    assert tile_grid(800, 600, 1280) == [(0, 0, 800, 600)]       # frame smaller than a tile: one tile
+
+
+class _FakeResult:
+    def __init__(self, rows):
+        import types
+        a = np.array(rows, float).reshape(-1, 6)                  # x1 y1 x2 y2 conf cls
+        arrays = types.SimpleNamespace(xyxy=a[:, :4], conf=a[:, 4], cls=a[:, 5])
+        self.boxes = types.SimpleNamespace(cpu=lambda: types.SimpleNamespace(numpy=lambda: arrays))
+
+
+class _FakeModel:
+    """Finds a ball wherever the (full-frame) frame has a bright 8x8 square, by looking at each crop."""
+    def predict(self, crops, **kw):
+        out = []
+        for c in crops:
+            ys, xs = np.nonzero(c[..., 0] > 200)
+            out.append(_FakeResult([[xs.min(), ys.min(), xs.max() + 1, ys.max() + 1, 0.6, 0]]) if len(xs) else _FakeResult([]))
+        return out
+
+
+def test_tiled_boxes_finds_small_ball_maps_to_frame_and_drops_cut_boxes():
+    from soccer_analyzer.tracking import merge_boxes, tile_grid, tiled_boxes
+    frame = np.zeros((2160, 3840, 3), np.uint8)
+    frame[1000:1008, 2000:2008] = 255                              # an 8 px ball far from the left edge
+    tiles = tile_grid(3840, 2160, 1280, 0.2)
+    found = tiled_boxes(_FakeModel(), frame, {0}, 0.1, tiles)
+    boxes = [b for b, _ in merge_boxes(found)]
+    assert len(boxes) == 1                                         # seen by overlapping tiles, merged to one
+    assert boxes[0] == (2000.0, 1000.0, 2008.0, 1008.0)
+    # an object lying across a tile's cut edge is dropped from that tile
+    cut = np.zeros((2160, 3840, 3), np.uint8)
+    cut[100:108, 1276:1284] = 255                                  # straddles the first tile's right edge (x=1280)
+    got = [b for b, _ in tiled_boxes(_FakeModel(), cut, {0}, 0.1, [(0, 0, 1280, 1280), (1024, 0, 2304, 1280)])]
+    assert (1276.0, 100.0, 1284.0, 108.0) in got and len(got) == 1  # whole in the 2nd tile only

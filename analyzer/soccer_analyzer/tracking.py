@@ -50,6 +50,76 @@ def make_mot_tracker(tracker_yaml: str):
         return cls(args=cfg, frame_rate=30)
 
 
+def tile_grid(width: int, height: int, size: int, overlap: float = 0.2,
+              roi: tuple[float, float, float, float] | None = None) -> list[tuple[int, int, int, int]]:
+    """Tiles (x1, y1, x2, y2) of at most `size` px that cover `roi` (default: the whole frame).
+
+    Neighbouring tiles overlap by `overlap` (a share of the tile) so a ball cut by one tile's
+    edge is whole in the next. Tiles stay inside the frame.
+    """
+    x1, y1, x2, y2 = roi if roi is not None else (0, 0, width, height)
+    x1, y1, x2, y2 = max(0, int(x1)), max(0, int(y1)), min(width, int(np.ceil(x2))), min(height, int(np.ceil(y2)))
+    step = max(1, int(size * (1 - overlap)))
+
+    def starts(lo: int, hi: int, limit: int) -> list[int]:
+        if hi - lo <= size:
+            return [max(0, min(lo, limit - size)) if limit >= size else 0]
+        n = int(np.ceil((hi - lo - size) / step)) + 1
+        first = lo
+        stride = (hi - lo - size) / max(n - 1, 1)             # spread the tiles evenly over the region
+        return [min(int(round(first + k * stride)), limit - size) for k in range(n)]
+
+    return [(x, y, min(x + size, width), min(y + size, height))
+            for y in starts(y1, y2, height) for x in starts(x1, x2, width)]
+
+
+def merge_boxes(dets: list[tuple[tuple[float, float, float, float], float]],
+                tol: float = 0.5) -> list[tuple[tuple[float, float, float, float], float]]:
+    """Keep the most confident of boxes that are the same object (centres within `tol` of the larger box size)."""
+    keep: list[tuple[tuple[float, float, float, float], float]] = []
+    for box, p in sorted(dets, key=lambda d: -d[1]):
+        cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+        size = max(box[2] - box[0], box[3] - box[1])
+        same = False
+        for kb, _ in keep:
+            kx, ky = (kb[0] + kb[2]) / 2, (kb[1] + kb[3]) / 2
+            ksize = max(kb[2] - kb[0], kb[3] - kb[1])
+            if np.hypot(cx - kx, cy - ky) <= tol * max(size, ksize) + 1:
+                same = True
+                break
+        if not same:
+            keep.append((box, p))
+    return keep
+
+
+def tiled_boxes(model, frame: np.ndarray, class_ids_: set[int], conf: float, tiles, device=None,
+                imgsz: int | None = None, edge_px: int = 3) -> list[tuple[tuple[float, float, float, float], float]]:
+    """Run `model` on each tile of `frame` and return (box in frame pixels, confidence) for the wanted classes.
+
+    A box touching the cut edge of a tile (not the frame's own edge) is dropped: it is an object sliced in
+    half, and its whole version is in the neighbouring tile thanks to the overlap.
+    """
+    if not tiles:
+        return []
+    h, w = frame.shape[:2]
+    crops = [np.ascontiguousarray(frame[y1:y2, x1:x2]) for x1, y1, x2, y2 in tiles]
+    kw = dict(conf=conf, device=device, verbose=False, classes=sorted(class_ids_))
+    if imgsz:
+        kw["imgsz"] = imgsz
+    results = model.predict(crops, **kw)
+    out = []
+    for (x1, y1, x2, y2), res in zip(tiles, results):
+        b = res.boxes.cpu().numpy()
+        for box, c, p in zip(b.xyxy, b.cls.astype(int), b.conf):
+            if c not in class_ids_:
+                continue
+            cut = ((box[0] <= edge_px and x1 > 0) or (box[1] <= edge_px and y1 > 0)
+                   or (box[2] >= x2 - x1 - edge_px and x2 < w) or (box[3] >= y2 - y1 - edge_px and y2 < h))
+            if not cut:
+                out.append(((float(box[0] + x1), float(box[1] + y1), float(box[2] + x1), float(box[3] + y1)), float(p)))
+    return out
+
+
 class Tracker:
     """Detects players and balls; tracks only the players.
 
@@ -62,7 +132,8 @@ class Tracker:
 
     def __init__(self, weights: str = "yolo11m.pt", imgsz: int = 1280, conf: float = 0.25,
                  player_names=PLAYER_NAMES, ball_names=BALL_NAMES, device: str | int | None = None,
-                 tracker: str = DEFAULT_TRACKER, ball_conf: float = 0.15):
+                 tracker: str = DEFAULT_TRACKER, ball_conf: float = 0.15, tile_size: int = 0,
+                 tile_overlap: float = 0.2):
         from ultralytics import YOLO  # imported lazily so tests don't need it
         self.model = YOLO(weights)
         self.imgsz, self.conf, self.ball_conf, self.device = imgsz, conf, ball_conf, device
@@ -71,6 +142,28 @@ class Tracker:
         if not self.player_ids:
             raise ValueError(f"{weights} has no player class; its classes are {list(self.model.names.values())}")
         self.mot = make_mot_tracker(tracker)
+        # Tiles: the ball is also searched for in full-resolution crops (tile_size px; 0 = off), so a small
+        # far-away ball isn't shrunk away when the frame is scaled down to imgsz. Only the ball is tiled.
+        self.tile_size, self.tile_overlap = int(tile_size), tile_overlap
+        self.pitch_region: np.ndarray | None = None      # pixel polygon of the pitch: tiles cover only this
+        self._tiles: dict[tuple[int, int], list] = {}
+
+    def set_pitch_region(self, polygon_px: np.ndarray | None) -> None:
+        """Limit tiling to the pitch (from the calibration) so the empty sky and car park cost nothing."""
+        self.pitch_region, self._tiles = polygon_px, {}
+
+    def tiles_for(self, frame: np.ndarray) -> list:
+        if not self.tile_size:
+            return []
+        h, w = frame.shape[:2]
+        if (w, h) not in self._tiles:
+            roi = None
+            if self.pitch_region is not None and len(self.pitch_region):
+                pad = 0.03 * max(w, h)
+                roi = (self.pitch_region[:, 0].min() - pad, self.pitch_region[:, 1].min() - pad,
+                       self.pitch_region[:, 0].max() + pad, self.pitch_region[:, 1].max() + pad)
+            self._tiles[(w, h)] = tile_grid(w, h, self.tile_size, self.tile_overlap, roi)
+        return self._tiles[(w, h)]
 
     def step(self, frame: np.ndarray) -> list[Detection]:
         res = self.model.predict(frame, imgsz=self.imgsz, conf=min(self.conf, self.ball_conf), device=self.device,
@@ -83,8 +176,12 @@ class Tracker:
         for t in np.asarray(tracks).reshape(-1, 8) if len(tracks) else []:
             out.append(Detection(int(t[4]), "player", tuple(float(v) for v in t[:4]), float(t[5])))
         balls = np.isin(cls, list(self.ball_ids)) & (boxes.conf >= self.ball_conf)
-        for box, p in zip(boxes.xyxy[balls], boxes.conf[balls]):
-            out.append(Detection(-1, "ball", tuple(float(v) for v in box), float(p)))
+        found = [(tuple(float(v) for v in box), float(p)) for box, p in zip(boxes.xyxy[balls], boxes.conf[balls])]
+        tiles = self.tiles_for(frame)
+        if tiles:
+            found = merge_boxes(found + tiled_boxes(self.model, frame, self.ball_ids, self.ball_conf, tiles,
+                                                    self.device, imgsz=min(self.tile_size, self.imgsz)))
+        out += [Detection(-1, "ball", box, p) for box, p in found]
         return out
 
 

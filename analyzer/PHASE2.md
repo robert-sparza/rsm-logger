@@ -101,6 +101,20 @@ It runs each model over the video with the same ball filter as the analyzer and 
 The table is also saved to `runs\evaluate_<video>.txt`. Ideally test on a video that was **not**
 used for labelling.
 
+### Tiles: finding a smaller, farther ball
+
+The detector sees the frame shrunk to `imgsz` (a 4K frame at 1600 px loses more than half its pixels),
+so a ball that is 12 px in the video can end up around 5 px, too small to find. With tiles, the ball
+is also searched for in full-resolution 1280 px crops that cover only the pitch (from your calibration):
+
+```bat
+python scripts\evaluate.py data\videos\training.mp4 --models runs\train\soccer-v1b\weights\best.pt --imgsz 1600 --calib runs\calib_small.json --tile 1280
+```
+
+Run it with and without `--tile` and compare the **ball in play** column. If it helps, set
+`tile_size: 1280` in `config.yaml`. It runs 3-5 times slower, because the tiles are extra passes per frame.
+Players are not tiled (they are large enough).
+
 ## 7. Switch the analyzer to your model
 
 In `config.yaml`:

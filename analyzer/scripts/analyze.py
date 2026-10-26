@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 
 import cv2
+import numpy as np
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -45,7 +46,14 @@ def make_tracker(cfg: dict) -> Tracker:
     m = cfg.get("model", {})
     return Tracker(weights=weights_path(m.get("weights", "yolo11m.pt")), imgsz=m.get("imgsz", 1280),
                    conf=m.get("conf", 0.25), ball_conf=m.get("ball_conf", 0.15), device=m.get("device"),
+                   tile_size=m.get("tile_size", 0), tile_overlap=m.get("tile_overlap", 0.2),
                    tracker=str(ROOT / m.get("tracker", "trackers/bytetrack_soccer.yaml")))
+
+
+def pitch_region(hom) -> np.ndarray:
+    """Pixel corners of the pitch (plus 2 m around it): the area worth searching for the ball."""
+    L, W, m = hom.pitch.length, hom.pitch.width, 2.0
+    return hom.to_image(np.array([[-m, -m], [L + m, -m], [L + m, W + m], [-m, W + m]], float))
 
 
 def make_pipeline(cfg: dict, hom, video_fps: float, bib: str | None = None) -> MatchPipeline:
@@ -54,7 +62,11 @@ def make_pipeline(cfg: dict, hom, video_fps: float, bib: str | None = None) -> M
     bib = bib or (t.get("bib_color") if t.get("mode") == "bib" else None)
     teams = BibClassifier(bib) if bib else TeamClassifier()
     print(f"Teams: {'bib colour ' + bib + ' = team 1' if bib else 'automatic (2 shirt colours)'}")
-    return MatchPipeline(make_tracker(cfg), hom, teams=teams,
+    tracker = make_tracker(cfg)
+    if hom is not None and tracker.tile_size:
+        tracker.set_pitch_region(pitch_region(hom))
+        print(f"Ball tiles: {tracker.tile_size}px, only over the pitch")
+    return MatchPipeline(tracker, hom, teams=teams,
                          pitch_margin=cfg.get("analysis", {}).get("pitch_margin", 1.5), fps=video_fps,
                          reject_cone_colours=cfg.get("ball", {}).get("reject_cone_colours", True))
 
