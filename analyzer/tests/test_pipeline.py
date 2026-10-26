@@ -263,7 +263,7 @@ def test_roboflow_yaml_found_one_folder_deeper_and_clear_error_for_label_batch(t
     (tmp_path / "Soccer.v1i.yolov11" / "valid" / "images").mkdir(parents=True)
     (tmp_path / "data.yaml").write_text("names: ['ball', 'cone', 'player']\nnc: 3\n")
     d = yaml.safe_load(fix_roboflow_yaml(tmp_path / "data.yaml").read_text())
-    assert d["train"].endswith("train/images") and d["val"].endswith("valid/images")
+    assert d["train"].replace("\\", "/").endswith("train/images") and d["val"].replace("\\", "/").endswith("valid/images")
     batch = tmp_path / "batch"
     (batch / "images").mkdir(parents=True)
     (batch / "labels").mkdir()
