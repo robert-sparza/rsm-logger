@@ -162,7 +162,7 @@ tests/          synthetic-data tests (no GPU needed)
 ## Optional analysis libraries
 
 For the coach-report work (see `PRODUCT.md`, section 7): with the venv active,
-`pip install -r requirements-extras.txt` installs kloppy, floodlight and mplsoccer.
+`pip install -r requirements-extras.txt` installs kloppy and mplsoccer (floodlight has no Python 3.14 build yet).
 `analyze.py` does not need them.
 
 ### Distance per minute and kloppy export
