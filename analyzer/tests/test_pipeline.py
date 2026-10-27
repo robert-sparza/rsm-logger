@@ -412,3 +412,63 @@ def test_standing_player_with_jittery_foot_point_does_not_run():
                            x=14 + rng.normal(0, 0.12, n), y=8 + rng.normal(0, 0.12, n)))
     s = player_stats(df)
     assert s.loc[1, "m_per_min"] < 25                         # raw frame-to-frame jitter would read ~400 m/min
+
+
+def _bib_scene(seconds=20, fps=10):
+    """Two real bib wearers (tracks 1, 2: votes mostly 1) and a non-bib kid (track 3) who stands next to them and
+    picks up bib colour from t=5 to t=12 (votes 1 about 40% of the time)."""
+    import pandas as pd
+    rng = np.random.default_rng(1)
+    rows = []
+    for k in range(seconds * fps):
+        t = k / fps
+        for tid, x, p1 in ((1, 5.0, 0.8), (2, 12.0, 0.8), (3, 20.0 if not 5 <= t < 12 else 12.8, 0.4 if 5 <= t < 12 else 0.0)):
+            rows.append(dict(frame=k, t=t, track_id=tid, cls="player", x=x, y=5.0 + tid, vote=float(rng.random() < p1)))
+    return pd.DataFrame(rows)
+
+
+def test_cap_team_size_demotes_the_weakest_bib_player_while_three_look_like_bibs():
+    from soccer_analyzer.stitch import cap_team_size
+    df = _bib_scene()
+    teams = {1: 1, 2: 1, 3: 1}                                    # track 3 got the bib label from its borrowed votes
+    ids, new_teams = cap_team_size(df, teams, 2)
+    team_of_row = ids.map(new_teams)
+    per_frame = df.assign(team=team_of_row).query("team == 1").groupby("frame").size()
+    assert (per_frame <= 2).mean() > 0.9                          # at most 2 bibs in nearly every frame
+    # the demoted rows belong to track 3 (the weak one), in its own new track
+    changed = df[ids != df.track_id]
+    assert set(changed.track_id) == {3} and set(ids[changed.index]).isdisjoint({1, 2, 3})
+    assert all(new_teams[i] == 0 for i in set(ids[changed.index]))
+    # nothing to do when there were never too many
+    same, _ = cap_team_size(df[df.track_id != 3], {1: 1, 2: 1}, 2)
+    assert (same == df[df.track_id != 3].track_id).all()
+
+
+def test_stitch_joins_a_new_id_that_starts_one_frame_before_the_old_one_ends():
+    import pandas as pd
+    from soccer_analyzer.stitch import stitch_tracks
+    a = pd.DataFrame(dict(t=np.arange(0, 5, 0.1), track_id=1, x=10.0, y=5.0))
+    b = pd.DataFrame(dict(t=np.arange(4.9, 9, 0.1), track_id=2, x=10.3, y=5.0))   # overlaps by one sample
+    df = pd.concat([a, b])
+    assert stitch_tracks(df)[2] == 1
+
+
+def test_pipeline_bib_count_limits_bib_players_per_frame():
+    pitch = Pitch(28.5, 16.3)
+    lm = pitch.landmarks()
+    names = ["far_left_corner", "far_right_corner", "near_left_corner", "near_right_corner"]
+    hom = Homography.fit(np.array([(100, 100), (900, 100), (1000, 600), (0, 600)], float),
+                         np.array([lm[n] for n in names], float), pitch)
+    result = {}
+    for k in (None, 2):
+        pipe = MatchPipeline(None, hom, teams=BibClassifier("neon_yellow"), fps=10, bib_count=k)
+        d = _bib_scene()
+        d["conf"], d["team"], d["bib"] = 0.9, -1, d.vote * 0.1
+        xy = hom.to_image(d[["x", "y"]].to_numpy(float))
+        d["px"], d["py"] = xy[:, 0], xy[:, 1]
+        h = 40 + 0.1 * d.py
+        d["bx1"], d["bx2"], d["by2"], d["by1"] = d.px - h * 0.2, d.px + h * 0.2, d.py, d.py - h
+        pipe.rows = d.to_dict("records")
+        out = pipe.dataframe()
+        result[k] = out[out.team == 1].groupby("frame").size().max()
+    assert result[None] == 3 and result[2] == 2

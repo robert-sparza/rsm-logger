@@ -18,6 +18,7 @@ teams:
   mode: auto               # auto = split by the two shirt colours (matches)
   # mode: bib              # training with bibs/vests: players wearing bib_color = team 1
   bib_color: neon_yellow   # neon_yellow | orange | pink | blue | red
+  bib_count: 2             # how many players wear the bib (never more than this labelled at once); remove if it varies
   # (or just add --bib neon_yellow to analyze.py / live.py)
 
 analysis:

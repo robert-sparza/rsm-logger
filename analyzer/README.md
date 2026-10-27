@@ -176,3 +176,10 @@ the least reliable.
 python scripts\export_kloppy.py runs\training --calib runs\calib_small.json
 ```
 writes `runs\training\tracking_kloppy.csv` in kloppy's standard format (needs `requirements-extras.txt`).
+
+### Bib count
+
+With bibs, `teams.bib_count` in `config.yaml` says how many players wear one (2 in the 2 v 5 drill). A
+non-bib player standing next to bib wearers can pick up some of their colour; with the count set, the
+analyzer never labels more than that many players as the bib team at the same moment, and puts the
+weakest-looking ones in the other team. Remove the line (or set it to 0) when the number changes during a session.

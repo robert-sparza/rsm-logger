@@ -24,7 +24,7 @@ def _track_table(players: pd.DataFrame, edge_rows: int = 5) -> pd.DataFrame:
 
 
 def stitch_tracks(players: pd.DataFrame, max_gap_s: float = 8.0, max_speed: float = 7.0,
-                  slack_m: float = 1.5, teams: dict[int, int] | None = None) -> dict[int, int]:
+                  slack_m: float = 1.5, teams: dict[int, int] | None = None, overlap_s: float = 0.2) -> dict[int, int]:
     """Map every track id to the id of the first track in its chain.
 
     players: rows of one class with t, track_id, x, y (pitch metres).
@@ -46,11 +46,12 @@ def stitch_tracks(players: pd.DataFrame, max_gap_s: float = 8.0, max_speed: floa
         best, best_score = None, np.inf
         for r, (t1, x1, y1) in ends.items():
             gap = tr.t0 - t1
-            if not (0 < gap <= max_gap_s):
+            if not (-overlap_s < gap <= max_gap_s):          # a new id often starts a frame or two before the old one ends
                 continue
             if tid in teams and r in chain_team and teams[tid] != chain_team[r]:
                 continue
             d = np.hypot(tr.x0 - x1, tr.y0 - y1)
+            gap = max(gap, 0.0)
             reach = slack_m + min(max_speed * gap, 4.0 + 2.0 * gap)
             if d <= reach and d / reach < best_score:
                 best, best_score = r, d / reach
@@ -142,3 +143,50 @@ def split_on_team_change(players: pd.DataFrame, decide, window_s: float = 3.0, m
             new_ids.loc[tr.index[seg == k]] = next_id
             next_id += 1
     return new_ids
+
+
+def cap_team_size(players: pd.DataFrame, teams: dict[int, int], max_players: int, team: int = 1,
+                  segment_gap_s: float = 1.0, min_run_s: float = 1.0) -> tuple[pd.Series, dict[int, int]]:
+    """Never more than `max_players` players of `team` at once (e.g. 2 players wear the bib).
+
+    A non-bib player standing next to bib wearers picks up some bib colour, so his track can be
+    labelled bib team and for a while there are three bibs on the pitch. Each stretch of time that has too
+    many ("crowded") is looked at on its own: every track in it is scored by the share of bib votes it
+    got during that stretch, and in each frame the weakest ones above the limit are put in the other team.
+    Their rows get a new track id, so a track never changes team in the middle. Stretches shorter than
+    `min_run_s` are left alone: they are borderline flickers, and a one-frame track is worse than an
+    extra bib for a moment. Returns (new ids aligned with `players`, team per id).
+    """
+    ids = players.track_id.copy()
+    new_teams = dict(teams)
+    in_team = players[players.track_id.map(teams).eq(team)]
+    n_per_frame = in_team.groupby("frame").size()
+    crowded = n_per_frame[n_per_frame > max_players].index
+    if len(crowded) == 0:
+        return ids, new_teams
+
+    t_of = in_team.drop_duplicates("frame").set_index("frame").t
+    ct = t_of.loc[crowded].sort_values()
+    segment = (ct.diff() > segment_gap_s).cumsum()                  # crowded stretches
+    overall = in_team.groupby("track_id").vote.mean().fillna(0.0)
+    rows_in_crowd = in_team[in_team.frame.isin(crowded)].assign(seg=lambda d: d.frame.map(segment))
+    seg_score = rows_in_crowd.groupby(["seg", "track_id"]).vote.mean()
+
+    demote = []
+    for (seg, frame), rows in rows_in_crowd.groupby(["seg", "frame"]):
+        scores = [seg_score.get((seg, tid), np.nan) for tid in rows.track_id]
+        scores = [overall[tid] if np.isnan(sc) else sc for sc, tid in zip(scores, rows.track_id)]
+        order = np.argsort(scores, kind="stable")
+        demote.extend(rows.index[order[: len(rows) - max_players]])
+    other = 1 - team
+    next_id = int(max(players.track_id.max(), max(teams, default=0))) + 1
+    d = players.loc[pd.Index(demote)].sort_values(["track_id", "frame"])
+    # Runs of consecutive demoted frames of one track become one new track each.
+    run = ((d.track_id != d.track_id.shift()) | (d.frame - d.frame.shift() > 3)).cumsum()
+    for _, grp in d.groupby(run):
+        if grp.t.max() - grp.t.min() < min_run_s:
+            continue
+        ids[grp.index] = next_id
+        new_teams[next_id] = other
+        next_id += 1
+    return ids, new_teams

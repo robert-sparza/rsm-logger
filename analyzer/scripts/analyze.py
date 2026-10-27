@@ -68,7 +68,8 @@ def make_pipeline(cfg: dict, hom, video_fps: float, bib: str | None = None) -> M
         print(f"Ball tiles: {tracker.tile_size}px, only over the pitch")
     return MatchPipeline(tracker, hom, teams=teams,
                          pitch_margin=cfg.get("analysis", {}).get("pitch_margin", 1.5), fps=video_fps,
-                         reject_cone_colours=cfg.get("ball", {}).get("reject_cone_colours", True))
+                         reject_cone_colours=cfg.get("ball", {}).get("reject_cone_colours", True),
+                         bib_count=(t.get("bib_count") if bib else None))
 
 
 def add_team_args(ap: argparse.ArgumentParser) -> None:

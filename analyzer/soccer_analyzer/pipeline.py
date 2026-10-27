@@ -10,7 +10,7 @@ import pandas as pd
 from .ball import BallSelector, cone_colored
 from .pitch import Homography, Pitch
 from .occlusion import fix_occluded_feet
-from .stitch import off_pitch_tracks, split_on_team_change, stitch_tracks
+from .stitch import cap_team_size, off_pitch_tracks, split_on_team_change, stitch_tracks
 from .teams import BibClassifier, TeamClassifier
 from .tracking import Detection, Tracker
 from .viz import TEAM_FALLBACK
@@ -38,7 +38,8 @@ class MatchPipeline:
     def __init__(self, tracker: Tracker, homography: Homography | None,
                  teams: TeamClassifier | BibClassifier | None = None,
                  team_warmup_frames: int = 50, color_every: int = 3, pitch_margin: float = 1.5,
-                 fps: float = 30.0, reject_cone_colours: bool = True):
+                 fps: float = 30.0, reject_cone_colours: bool = True, bib_count: int | None = None):
+        self.bib_count = bib_count        # how many players wear the bib (team 1): never label more than this at once
         self.tracker = tracker
         self.hom = homography
         self.pitch = homography.pitch if homography else Pitch()
@@ -140,6 +141,13 @@ class MatchPipeline:
             root = stitch_tracks(df[players], teams={k: t for k, t in sure.items() if t >= 0})
             df.loc[players, "track_id"] = df.loc[players, "track_id"].map(root).fillna(df.track_id).astype(int)
         teams = {tid: self.teams.decide(c) for tid, c in votes_by_track(df[players]).items()}
+        if clean and self.bib_count and self.hom is not None:
+            ids, teams = cap_team_size(df[players], teams, self.bib_count)
+            df.loc[players, "track_id"] = ids
+            # The pieces just moved out of the bib team can join the other team's tracks.
+            root = stitch_tracks(df[players], teams={k: t for k, t in teams.items() if t >= 0})
+            df.loc[players, "track_id"] = df.loc[players, "track_id"].map(root).fillna(df.track_id).astype(int)
+            teams = {root.get(k, k): t for k, t in teams.items()}
         df.loc[players, "team"] = df.loc[players, "track_id"].map(teams).fillna(-1).astype(int)
         if clean:
             order = df[players].groupby("track_id").frame.min().sort_values().index
