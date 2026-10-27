@@ -472,3 +472,23 @@ def test_pipeline_bib_count_limits_bib_players_per_frame():
         out = pipe.dataframe()
         result[k] = out[out.team == 1].groupby("frame").size().max()
     assert result[None] == 3 and result[2] == 2
+
+
+def test_joined_overlapping_tracks_leave_one_row_per_player_and_frame():
+    pitch = Pitch(28.5, 16.3)
+    lm = pitch.landmarks()
+    names = ["far_left_corner", "far_right_corner", "near_left_corner", "near_right_corner"]
+    hom = Homography.fit(np.array([(100, 100), (900, 100), (1000, 600), (0, 600)], float),
+                         np.array([lm[n] for n in names], float), pitch)
+    pipe = MatchPipeline(None, hom, teams=BibClassifier("neon_yellow"), fps=10)
+    rows = []
+    for tid, f0, f1 in ((1, 0, 50), (2, 49, 100)):                # id 2 starts one frame before id 1 ends
+        for f in range(f0, f1):
+            px, py = hom.to_image(np.array([[10.0, 8.0]]))[0]
+            rows.append(dict(frame=f, t=f / 10, track_id=tid, cls="player", team=-1, conf=0.9 - 0.1 * (tid == 2),
+                             px=px, py=py, x=10.0, y=8.0, bx1=px - 8, by1=py - 40, bx2=px + 8, by2=py,
+                             bib=np.nan, vote=np.nan))
+    pipe.rows = rows
+    out = pipe.dataframe()
+    assert out.track_id.nunique() == 1
+    assert not out.duplicated(["frame", "track_id"]).any()

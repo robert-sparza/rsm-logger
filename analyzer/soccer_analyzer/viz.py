@@ -143,7 +143,8 @@ def plot_passes(passes, df, pitch: Pitch, team: int, path: Path):
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(10, 6.8))
     _mpl_pitch(ax, pitch)
-    players = df[df.cls == "player"].set_index(["t", "track_id"])[["x", "y"]]
+    players = df[df.cls == "player"].drop_duplicates(["t", "track_id"]).set_index(["t", "track_id"])[["x", "y"]]
+    players = players.sort_index()
     for p in passes[(passes.kind == "pass") & (passes.team_from == team)].itertuples():
         try:
             a = players.loc[(p.t_start, p.from_id)]

@@ -148,6 +148,11 @@ class MatchPipeline:
             root = stitch_tracks(df[players], teams={k: t for k, t in teams.items() if t >= 0})
             df.loc[players, "track_id"] = df.loc[players, "track_id"].map(root).fillna(df.track_id).astype(int)
             teams = {root.get(k, k): t for k, t in teams.items()}
+        if clean:
+            # Joining tracks that overlap by a frame can leave two boxes for one player in that frame: keep the surer one.
+            dup = df[players].sort_values("conf", ascending=False).duplicated(["frame", "track_id"])
+            df = df.drop(dup[dup].index)
+            players = df.cls == "player"
         df.loc[players, "team"] = df.loc[players, "track_id"].map(teams).fillna(-1).astype(int)
         if clean:
             order = df[players].groupby("track_id").frame.min().sort_values().index
