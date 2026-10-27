@@ -9,7 +9,7 @@ weren't tested.
 | Product | What it is | What it gives the coach | Model |
 |---|---|---|---|
 | **Veo** (Cam 3 + Analytics 2) | Auto-follow camera + cloud | Distance, sprints, speed and time played per player; heat maps; shot maps that jump to the clip; multi-match leaderboards; "Player Spotlight" reels; "Coach Assist": questions about one or more matches in plain language | Camera + subscription; analytics is a paid add-on |
-| **XbotGo** (Falcon, the camera you have) | Auto-tracking 4K gimbal for a phone | AI highlight reels; "Pro Soccer" (Sept 2026): cloud match reports with goals, shots, saves, blocks and defensive actions, plus trend charts | Camera, no subscription for the basics |
+| **XbotGo** (Falcon, the camera you have) | Auto-tracking 4K camera with built-in lenses (stand-alone, not a phone gimbal) | AI highlight reels; "Pro Soccer" (Sept 2026): cloud match reports with goals, shots, saves, blocks and defensive actions, plus trend charts | Camera, no subscription for the basics |
 | **Trace** | Youth camera system | A personal highlight video for every player; player-focused analytics | Subscription; recruiting-oriented |
 | **Pixellot** (+ VidSwap) | Installed cameras for clubs and federations | Full-game recording, automatic highlights, game breakdowns, team and player stats | Facility install |
 | **Spiideo** | Fixed multi-camera install | Broadcast-grade recording for academies and colleges | High price, installed |
@@ -165,6 +165,31 @@ Trademark and domain availability haven't been checked.
 4. Write the three-sentence summary generator from rules and templates.
 5. Test SAM 3 Auto Label on the first moving XbotGo clip.
 
+## 8. Coverage and cameras, 27 Oct 2026
+
+**Rule of thumb (estimate, 4K video, 22 cm ball, about 8 px needed to find it):** the farthest point of the
+field should be no more than about `53 m / tan(half the lens angle)` from the camera. 100° lens: 44 m. 90°: 53 m.
+70°: 75 m. 56°: 100 m.
+
+| Field | Players | Ball |
+|---|---|---|
+| up to ~30 m long (yours) | 1 camera, wide lens | 1 camera, wide lens, corner or 12-16 m back |
+| ~55 x 36 m (7v7, 9v9) | 1 camera from a corner | 2 fixed cameras, one per half |
+| ~70 x 45 m | 1 camera from a corner (players are ~40 px tall at the far corner) | 2 cameras, better 3 |
+| 105 x 68 m | 2 cameras | 3 cameras, or 8K |
+
+**Fixed cameras vs a follow camera.** A follow camera (XbotGo auto-tracking) only records the part it frames, so
+players outside the frame are never seen and team measures (width, depth, heat maps, all positions) are
+incomplete. It also needs a per-frame pitch registration (keypoint model; "No Bells, Just Whistles" and Roboflow's
+keypoint tutorial are the starting points), and that fails when no lines are in view or the lines are faint (small
+courts, night). It stays useful for highlights and ball events, not for full team analysis.
+
+**Several fixed cameras:** calibrate each one separately, detect in each, convert to pitch metres, and merge
+duplicates where the views overlap. Sync them by a clap or a flash at the start. This needs new code (not built).
+
+**XbotGo Falcon:** the vendor says firmware v3.3.0 has a fixed full-field "Baseball Mode" with manual zoom and no
+tracking. Test whether it gives a usable wide view for soccer. Vendor claim, not tested.
+
 ## Sources
 
 - Veo Analytics 2 overview: https://support.veo.com/hc/en-us/articles/11873714080657-Veo-Analytics-2-Overview-and-features
@@ -201,3 +226,7 @@ Trademark and domain availability haven't been checked.
 - Small-sided game tactical metrics by age group: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7084353/
 - SciSports AI match summaries: https://www.scisports.com/insight-in-an-instant-intelligence-the-moment-you-need-it
 - RAG post-match tactical reports: https://ricardoheredia.substack.com/p/building-a-rag-system-that-generates
+- Veo recording equipment guide: https://www.veo.com/en-us/article/football-recording-equipment-guide
+- XbotGo Falcon baseball mode (fixed full-field view): https://xbotgo.com/blogs/knowledge/falcon-baseball-camera
+- No Bells, Just Whistles (pitch registration): https://arxiv.org/abs/2404.08401
+- Roboflow, camera calibration in sports with keypoints: https://blog.roboflow.com/camera-calibration-sports-computer-vision/
