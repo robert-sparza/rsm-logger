@@ -514,3 +514,29 @@ def test_team_hull_and_voronoi_control():
     tab = space_table(pd.DataFrame(rows), 20, 10)
     assert len(tab) == 3 and abs(tab.hull0_m2.iloc[0] - 8) < 1e-6 and tab.hull1_m2.iloc[0] > 0
     assert abs(tab.control0.iloc[0] + tab.control1.iloc[0] - 1) < 1e-6
+
+
+def test_calibration_clicks_can_skip_jump_and_undo():
+    from soccer_analyzer.calib_ui import CalibState
+    s = CalibState(["a1", "b2", "c3", "d4", "e5"])
+    s.click((1, 1))                                   # a1 placed, now b2
+    assert s.current == "b2"
+    s.skip()                                          # b2 skipped, now c3
+    assert s.current == "c3" and "b2" in s.skipped
+    s.jump(s.key_of("e5"))                            # choose e5 directly
+    s.click((5, 5))                                   # e5 placed; next unresolved is c3 (wraps round)
+    assert s.current == "c3"
+    s.click((3, 3))
+    assert s.current == "d4"
+    s.undo()                                          # takes back the c3 click
+    assert s.current == "c3" and "c3" not in s.points
+    s.jump(s.key_of("a1"))
+    s.click((9, 9))                                   # re-clicking replaces a placed point
+    assert s.points["a1"] == (9.0, 9.0) and len(s.points) == 2
+    assert s.placed == ["a1", "e5"]
+    s.undo()
+    s.undo()                                          # undo the a1 click, then the jump has no history: stays safe
+    s.undo()
+    s.undo()
+    s.undo()
+    s.undo()

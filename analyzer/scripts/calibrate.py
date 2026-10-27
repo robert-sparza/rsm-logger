@@ -13,10 +13,12 @@ pitches (--circle-radius, --box-depth, --box-width, --penalty-spot, --goal-area-
 know them, skip those landmarks with "s".
 
 For each landmark name shown at the top of the window:
-    left-click  = place the point
-    s           = skip (landmark not visible)
-    u           = undo last point
+    left-click  = place the point for the highlighted landmark
+    s           = skip it (not visible / not sure)
+    a, b, c ... = the letter next to a landmark's name chooses it directly (re-click to move a point)
+    u           = undo
     q / Enter   = finish (needs >= 4 points, 6+ spread across the pitch is better)
+    --list      = print the landmark names and where they are on the pitch
 
 Re-run this whenever the tripod or zoom changes.
 """
@@ -28,6 +30,7 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from soccer_analyzer.calib_ui import KEYS, CalibState  # noqa: E402
 from soccer_analyzer.pitch import Homography, Pitch  # noqa: E402
 from soccer_analyzer.viz import draw_pitch, to_canvas  # noqa: E402
 
@@ -49,6 +52,7 @@ def main():
     ap.add_argument("--at", type=float, default=5.0, help="seconds into the video to grab the frame")
     ap.add_argument("--length", type=float, default=105.0, help="pitch length in metres")
     ap.add_argument("--width", type=float, default=68.0, help="pitch width in metres")
+    ap.add_argument("--list", action="store_true", help="print the landmark names and positions, then stop")
     ap.add_argument("--circle-radius", type=float, default=9.15, help="centre circle radius (m)")
     ap.add_argument("--box-depth", type=float, default=16.5, help="penalty area depth from goal line (m)")
     ap.add_argument("--box-width", type=float, default=40.32, help="penalty area width (m)")
@@ -60,9 +64,13 @@ def main():
     pitch = Pitch(args.length, args.width, circle_radius=args.circle_radius, box_depth=args.box_depth,
                   box_width=args.box_width, penalty_spot=args.penalty_spot,
                   goal_area_depth=args.goal_area_depth, goal_area_width=args.goal_area_width)
+    landmarks = pitch.landmarks()
+    if args.list:
+        for key, (name, xy) in zip(KEYS, landmarks.items()):
+            print(f"{key}  {name:24s} at ({xy[0]:.1f} m, {xy[1]:.1f} m)")
+        return
     frame = grab_frame(args.source, args.at)
-    names = list(pitch.landmarks().items())
-    img_pts, pitch_pts, clicked, i = [], [], [], 0     # clicked = landmark index of each point
+    state = CalibState(list(landmarks))
     click = {"pt": None}
 
     def on_mouse(ev, x, y, *_):
@@ -76,37 +84,53 @@ def main():
     ref = draw_pitch(pitch, scale=ref_scale)
     cv2.putText(ref, "far side", (10, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
     cv2.putText(ref, "near side (camera)", (10, ref.shape[0] - 3), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+    scale = max(0.6, frame.shape[1] / 1920)               # text size follows the video resolution
+    line_h = int(34 * scale)
+    colors = {"done": (0, 255, 0), "skip": (140, 140, 140), "now": (0, 255, 255), "todo": (255, 255, 255)}
 
-    while i < len(names):
-        name, xy = names[i]
+    while True:
         view = frame.copy()
-        for p in img_pts:
-            cv2.circle(view, (int(p[0]), int(p[1])), 6, (0, 255, 255), -1)
-        cv2.putText(view, f"[{len(img_pts)} pts] click: {name}   (s=skip u=undo q=done)", (20, 40),
-                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2)
+        for name, p in state.points.items():
+            cv2.circle(view, (int(p[0]), int(p[1])), int(6 * scale), (0, 255, 255), -1)
+            cv2.putText(view, state.key_of(name), (int(p[0]) + 8, int(p[1]) - 8), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.8 * scale, (0, 255, 255), 2)
+        cv2.rectangle(view, (0, 0), (int(520 * scale), line_h * (len(state.names) + 3)), (0, 0, 0), -1)
+        head = f"click: {state.current}" if state.current else "all done - press q"
+        cv2.putText(view, head, (10, line_h - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.8 * scale, colors["now"], 2)
+        cv2.putText(view, "s=skip  u=undo  q=finish  letter=choose point", (10, 2 * line_h - 6),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6 * scale, colors["todo"], 1)
+        for k, name in enumerate(state.names):
+            st = ("now" if name == state.current else "done" if name in state.points
+                  else "skip" if name in state.skipped else "todo")
+            mark = {"done": "x", "skip": "-", "now": ">", "todo": " "}[st]
+            cv2.putText(view, f"{mark} {state.key_of(name)}  {name}", (10, (k + 3) * line_h - 6),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6 * scale, colors[st], 1)
         r = ref.copy()
-        cv2.circle(r, to_canvas(xy, ref_scale), 7, (0, 0, 255), -1)
+        if state.current:
+            cv2.circle(r, to_canvas(landmarks[state.current], ref_scale), 7, (0, 0, 255), -1)
         cv2.imshow(win, view)
         cv2.imshow("pitch reference", r)
         k = cv2.waitKey(30) & 0xFF
         if click["pt"] is not None:
-            img_pts.append(click["pt"])
-            pitch_pts.append(xy)
-            clicked.append(i)
+            state.click(click["pt"])
             click["pt"] = None
-            i += 1
         elif k == ord("s"):
-            i += 1
-        elif k == ord("u") and img_pts:
-            img_pts.pop()
-            pitch_pts.pop()
-            i = clicked.pop()
+            state.skip()
+        elif k == ord("u"):
+            state.undo()
         elif k in (ord("q"), 13):
             break
+        elif k != 255 and chr(k).lower() in "abcdefghijklmnoprtvwxyz":
+            state.jump(chr(k).lower())
     cv2.destroyAllWindows()
 
+    clicked_names = state.placed
+    if len(clicked_names) < 4:
+        raise SystemExit(f"Only {len(clicked_names)} points placed; need at least 4 (6 or more spread across the pitch is better). "
+                         "Run it again.")
+    img_pts = [state.points[n] for n in clicked_names]
+    pitch_pts = [landmarks[n] for n in clicked_names]
     hom = Homography.fit(img_pts, pitch_pts, pitch)
-    clicked_names = [names[j][0] for j in clicked]
     err = np.linalg.norm(hom.to_pitch(np.array(img_pts)) - np.array(pitch_pts), axis=1)
     print(f"{len(img_pts)} points, error: mean {err.mean():.2f} m, max {err.max():.2f} m")
     for n, e in zip(clicked_names, err):
