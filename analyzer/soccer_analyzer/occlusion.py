@@ -39,8 +39,23 @@ def expected_height_model(players: pd.DataFrame, bins: int = 20, quantile: float
     return np.array([a, b])
 
 
+def player_scale(players: pd.DataFrame, expected: pd.Series, min_rows: int = 30, quantile: float = 0.8,
+                 low: float = 0.7, high: float = 1.15) -> pd.Series:
+    """How tall each player is compared with the typical player at that spot (1.0 = typical).
+
+    A small kid is not an occluded kid: his box is always shorter than the average one. The scale is
+    the 80th percentile of his own box heights relative to the expected height (so the moments with hidden
+    legs don't drag it down). Players seen in fewer than `min_rows` frames get 1.0.
+    """
+    if "track_id" not in players.columns:
+        return pd.Series(1.0, index=players.index)
+    ratio = (players.by2 - players.by1) / expected
+    scale = ratio.groupby(players.track_id).transform(lambda r: r.quantile(quantile) if len(r) >= min_rows else 1.0)
+    return scale.clip(low, high)
+
+
 def fix_occluded_feet(players: pd.DataFrame, hom, min_ratio: float = 0.7) -> pd.DataFrame:
-    """Return a copy where boxes shorter than `min_ratio` x the expected height
+    """Return a copy where boxes shorter than `min_ratio` x the player's expected height
     get their foot point (px, py) and pitch position (x, y) re-estimated from the
     head. Adds a boolean `occluded` column."""
     out = players.copy()
@@ -49,7 +64,7 @@ def fix_occluded_feet(players: pd.DataFrame, hom, min_ratio: float = 0.7) -> pd.
     if model is None or hom is None:
         return out
     a, b = model
-    expected = a + b * out.by1
+    expected = (a + b * out.by1) * player_scale(out, a + b * out.by1)      # this player's own full height here
     h, w = out.by2 - out.by1, out.bx2 - out.bx1
     # Short but wide = lying on the ground: the feet really are at the bottom of the box.
     occ = (h < min_ratio * expected) & (w <= 1.3 * h)

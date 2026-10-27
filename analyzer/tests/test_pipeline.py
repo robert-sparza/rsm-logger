@@ -554,3 +554,25 @@ def test_off_pitch_tracks_reasons_and_option_to_keep_players_standing_on_the_lin
     assert off_pitch_tracks(df, 28.5, 16.3, reasons=why) == {2, 3}
     assert why == {"off_pitch": {3}, "standing_on_line": {2}}
     assert off_pitch_tracks(df, 28.5, 16.3, drop_standing_on_line=False) == {3}
+
+
+def test_a_small_player_is_not_taken_for_an_occluded_one():
+    from soccer_analyzer.occlusion import fix_occluded_feet
+    import pandas as pd
+    pitch = Pitch(length=40, width=20)
+    pts = np.array([[0, 0], [40, 0], [40, 20], [0, 20]], np.float32)
+    hom = Homography.fit(pts * 10, pts, pitch)
+    rng = np.random.default_rng(2)
+    rows = []
+    for tid, size in ((1, 1.0), (2, 1.0), (3, 1.0), (4, 0.62)):        # track 4 is a small kid: 62% of the usual height
+        for i in range(120):
+            top = rng.uniform(0, 150)
+            h = (60 + 0.5 * top) * size
+            rows.append(dict(track_id=tid, px=200.0, by1=top, by2=top + h, bx1=180.0, bx2=180 + 0.4 * h))
+    hidden = dict(track_id=1, px=200.0, by1=100.0, by2=150.0, bx1=180.0, bx2=220.0)     # a real hidden-legs frame
+    df = pd.DataFrame(rows + [hidden])
+    df["py"] = df.by2
+    df[["x", "y"]] = hom.to_pitch(df[["px", "py"]].to_numpy())
+    out = fix_occluded_feet(df, hom)
+    assert out[out.track_id == 4].occluded.mean() < 0.02        # the small kid keeps his own feet
+    assert out.iloc[-1].occluded and abs(out.iloc[-1].py - 210) < 12
