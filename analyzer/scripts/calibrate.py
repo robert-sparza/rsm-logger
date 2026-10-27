@@ -14,10 +14,12 @@ know them, skip those landmarks with "s".
 
 For each landmark name shown at the top of the window:
     left-click  = place the point for the highlighted landmark
-    s           = skip it (not visible / not sure)
-    a, b, c ... = the letter next to a landmark's name chooses it directly (re-click to move a point)
-    u           = undo
-    q / Enter   = finish (needs >= 4 points, 6+ spread across the pitch is better)
+    s / Space   = skip it (not visible / not sure); upper or lower case both work
+    a, b, c ... = the letter next to a landmark on the small pitch diagram chooses it directly
+                  (re-click to move a point)
+    u / Backspace = undo
+    q / Enter / Esc = finish (needs >= 4 points, 6+ spread across the pitch is better)
+The diagram and the instructions are in the top-left corner of the frame; clicks there are ignored.
     --list      = print the landmark names and where they are on the pitch
 
 Re-run this whenever the tripod or zoom changes.
@@ -33,6 +35,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from soccer_analyzer.calib_ui import KEYS, CalibState  # noqa: E402
 from soccer_analyzer.pitch import Homography, Pitch  # noqa: E402
 from soccer_analyzer.viz import draw_pitch, to_canvas  # noqa: E402
+
+
+MARGIN = 18                                               # room around the small pitch diagram for the letters
 
 
 def grab_frame(src: str, at_s: float) -> np.ndarray:
@@ -52,6 +57,7 @@ def main():
     ap.add_argument("--at", type=float, default=5.0, help="seconds into the video to grab the frame")
     ap.add_argument("--length", type=float, default=105.0, help="pitch length in metres")
     ap.add_argument("--width", type=float, default=68.0, help="pitch width in metres")
+    ap.add_argument("--inset", type=float, default=0.26, help="width of the pitch diagram in the corner, as a share of the video width")
     ap.add_argument("--list", action="store_true", help="print the landmark names and positions, then stop")
     ap.add_argument("--circle-radius", type=float, default=9.15, help="centre circle radius (m)")
     ap.add_argument("--box-depth", type=float, default=16.5, help="penalty area depth from goal line (m)")
@@ -72,21 +78,39 @@ def main():
     frame = grab_frame(args.source, args.at)
     state = CalibState(list(landmarks))
     click = {"pt": None}
+    H, Wf = frame.shape[:2]
+    scale = max(0.6, Wf / 1920)                           # text size follows the video resolution
+    inset_w = int(args.inset * Wf)
+    ref_scale = (inset_w - 36) / pitch.length
+    ref0 = draw_pitch(pitch, scale=ref_scale, margin=MARGIN)
+    ih, iw = ref0.shape[:2]
+    text_h = int(64 * scale)
+    colors = {"done": (0, 255, 0), "skip": (140, 140, 140), "now": (0, 0, 255), "todo": (255, 255, 255)}
 
     def on_mouse(ev, x, y, *_):
-        if ev == cv2.EVENT_LBUTTONDOWN:
+        if ev == cv2.EVENT_LBUTTONDOWN and not (x < iw + 8 and y < ih + text_h + 8):   # ignore clicks on the inset
             click["pt"] = (x, y)
 
     win = "calibrate"
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(win, min(Wf, 1600), int(min(Wf, 1600) * H / Wf))
     cv2.setMouseCallback(win, on_mouse)
-    ref_scale = 500 / pitch.length
-    ref = draw_pitch(pitch, scale=ref_scale)
-    cv2.putText(ref, "far side", (10, 14), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
-    cv2.putText(ref, "near side (camera)", (10, ref.shape[0] - 3), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
-    scale = max(0.6, frame.shape[1] / 1920)               # text size follows the video resolution
-    line_h = int(34 * scale)
-    colors = {"done": (0, 255, 0), "skip": (140, 140, 140), "now": (0, 255, 255), "todo": (255, 255, 255)}
+
+    def reference() -> np.ndarray:
+        """The pitch diagram with every landmark's letter: where each one is, and which are done / skipped / next."""
+        r = ref0.copy()
+        for name, xy in landmarks.items():
+            st = ("now" if name == state.current else "done" if name in state.points
+                  else "skip" if name in state.skipped else "todo")
+            c = to_canvas(xy, ref_scale, MARGIN)
+            cv2.circle(r, c, 7 if st == "now" else 4, colors[st], -1)
+            if st == "now":
+                cv2.circle(r, c, 11, (0, 255, 255), 2)
+            cv2.putText(r, state.key_of(name), (c[0] + 6, c[1] - 6), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5 * scale if st != "now" else 0.7 * scale, (0, 255, 255) if st == "now" else colors[st], 1)
+        cv2.putText(r, "far side", (12, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45 * scale, (255, 255, 255), 1)
+        cv2.putText(r, "near side (camera)", (12, ih - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.45 * scale, (255, 255, 255), 1)
+        return r
 
     while True:
         view = frame.copy()
@@ -94,34 +118,29 @@ def main():
             cv2.circle(view, (int(p[0]), int(p[1])), int(6 * scale), (0, 255, 255), -1)
             cv2.putText(view, state.key_of(name), (int(p[0]) + 8, int(p[1]) - 8), cv2.FONT_HERSHEY_SIMPLEX,
                         0.8 * scale, (0, 255, 255), 2)
-        cv2.rectangle(view, (0, 0), (int(520 * scale), line_h * (len(state.names) + 3)), (0, 0, 0), -1)
-        head = f"click: {state.current}" if state.current else "all done - press q"
-        cv2.putText(view, head, (10, line_h - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.8 * scale, colors["now"], 2)
-        cv2.putText(view, "s=skip  u=undo  q=finish  letter=choose point", (10, 2 * line_h - 6),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6 * scale, colors["todo"], 1)
-        for k, name in enumerate(state.names):
-            st = ("now" if name == state.current else "done" if name in state.points
-                  else "skip" if name in state.skipped else "todo")
-            mark = {"done": "x", "skip": "-", "now": ">", "todo": " "}[st]
-            cv2.putText(view, f"{mark} {state.key_of(name)}  {name}", (10, (k + 3) * line_h - 6),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6 * scale, colors[st], 1)
-        r = ref.copy()
-        if state.current:
-            cv2.circle(r, to_canvas(landmarks[state.current], ref_scale), 7, (0, 0, 255), -1)
+        # The diagram and the instructions sit in the top-left corner (usually sky and trees, not pitch).
+        view[4:4 + ih, 4:4 + iw] = reference()
+        y0 = 4 + ih
+        cv2.rectangle(view, (4, y0), (4 + iw, y0 + text_h), (0, 0, 0), -1)
+        head = (f"click: {state.current}  [{state.key_of(state.current)}]" if state.current
+                else "all done - press q")
+        cv2.putText(view, head, (10, y0 + int(24 * scale)), cv2.FONT_HERSHEY_SIMPLEX, 0.7 * scale, (0, 255, 255), 2)
+        cv2.putText(view, "S/space=skip  U=undo  Q/Enter=finish  or press a point's letter", (10, y0 + int(52 * scale)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5 * scale, (255, 255, 255), 1)
         cv2.imshow(win, view)
-        cv2.imshow("pitch reference", r)
         k = cv2.waitKey(30) & 0xFF
+        ch = chr(k).lower() if 0 < k < 128 else ""
         if click["pt"] is not None:
             state.click(click["pt"])
             click["pt"] = None
-        elif k == ord("s"):
+        elif ch == "s" or k in (32, 9):                   # s / S, space or Tab: skip this point
             state.skip()
-        elif k == ord("u"):
+        elif ch == "u" or k == 8:                         # u / U or Backspace: undo
             state.undo()
-        elif k in (ord("q"), 13):
+        elif ch == "q" or k in (13, 27):                  # q / Q, Enter or Esc: finish
             break
-        elif k != 255 and chr(k).lower() in "abcdefghijklmnoprtvwxyz":
-            state.jump(chr(k).lower())
+        elif ch and ch in KEYS:
+            state.jump(ch)
     cv2.destroyAllWindows()
 
     clicked_names = state.placed
