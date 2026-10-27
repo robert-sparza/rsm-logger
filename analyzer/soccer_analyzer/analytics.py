@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 
 MAX_SPEED_MS = 12.0         # faster than this is a tracking glitch, not a sprint
+MEDIAN_S = 0.5             # jitter filter: median of each position over this many seconds
+STEP_S = 0.33              # distance is measured between positions this far apart in time
 MIN_ACTIVE_S = 10.0         # distance per minute is only reported for players followed at least this long
 POSSESSION_RADIUS_M = 2.0   # player this close to the ball "has" it
 
@@ -24,24 +26,49 @@ def smooth_positions(df: pd.DataFrame, window: int = 5) -> pd.DataFrame:
     return df
 
 
+def _frame_rate(df: pd.DataFrame) -> float:
+    dt = df.drop_duplicates("frame").sort_values("frame").t.diff().dropna()
+    dt = dt[dt > 0]
+    return float(1 / dt.median()) if len(dt) else 30.0
+
+
+def smooth_track(q: pd.DataFrame, fps: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """One track's positions with detection jitter taken out, sampled every STEP_S seconds.
+
+    Foot points of a box jitter by a few tens of centimetres from frame to frame; summed up, that
+    makes a player standing still "run" 30-50 m a minute. So: a median over MEDIAN_S seconds, then
+    positions every STEP_S seconds, and distance is measured between those.
+    """
+    win = max(3, int(round(MEDIAN_S * fps)) | 1)
+    x = q.x.rolling(win, center=True, min_periods=1).median().to_numpy()
+    y = q.y.rolling(win, center=True, min_periods=1).median().to_numpy()
+    t = q.t.to_numpy()
+    keep = np.r_[True, np.diff(np.floor(t / STEP_S)) > 0]          # first sample of each STEP_S slot
+    return t[keep], x[keep], y[keep]
+
+
 def player_stats(df: pd.DataFrame) -> pd.DataFrame:
-    """Distance covered, top speed and time on screen per tracked player."""
-    p = smooth_positions(df[df.cls == "player"])
-    p["dt"] = p.groupby("track_id")["t"].diff()
-    p["d"] = np.hypot(p.groupby("track_id")["x"].diff(), p.groupby("track_id")["y"].diff())
-    p["v"] = p["d"] / p["dt"]
-    valid = p["v"].between(0, MAX_SPEED_MS)
-    p.loc[~valid, ["d", "v"]] = np.nan
-    g = p.groupby("track_id")
-    stats = pd.DataFrame({
-        "team": g["team"].agg(lambda s: s.mode().iat[0] if len(s.mode()) else -1),
-        "seconds_tracked": g["t"].agg(lambda s: s.max() - s.min()),
-        "active_s": p["dt"].where(valid).groupby(p["track_id"]).sum(),
-        "distance_m": g["d"].sum(),
-        "top_speed_kmh": g["v"].quantile(0.95) * 3.6,
-    })
+    """Distance covered, speed and time followed per tracked player (jitter-filtered, see smooth_track)."""
+    p = df[df.cls == "player"].sort_values(["track_id", "frame"])
+    fps = _frame_rate(p) if len(p) else 30.0
+    rows = {}
+    for tid, q in p.groupby("track_id"):
+        t, x, y = smooth_track(q, fps)
+        dt = np.diff(t)
+        d = np.hypot(np.diff(x), np.diff(y))
+        ok = (dt > 0) & (dt <= 3 * STEP_S) & (d / np.where(dt > 0, dt, 1) <= MAX_SPEED_MS)   # gaps / glitches don't count
+        v = d[ok] / dt[ok]
+        rows[tid] = dict(
+            team=q.team.mode().iat[0] if len(q.team.mode()) else -1,
+            seconds_tracked=float(q.t.max() - q.t.min()),
+            active_s=float(dt[ok].sum()),
+            distance_m=float(d[ok].sum()),
+            top_speed_kmh=float(np.percentile(v, 95) * 3.6) if len(v) else np.nan)
+    stats = pd.DataFrame.from_dict(rows, orient="index").rename_axis("track_id")
+    if stats.empty:
+        return stats.assign(m_per_min=pd.Series(dtype=float))
     # Distance per minute counts only the time the player was actually followed (gaps where the track
-    # was lost don't dilute it), and is blank for players followed under 10 s.
+    # was lost don't dilute it), and is blank for players followed under MIN_ACTIVE_S seconds.
     stats["m_per_min"] = (stats.distance_m / stats.active_s * 60).where(stats.active_s >= MIN_ACTIVE_S)
     return stats.sort_values("distance_m", ascending=False)
 

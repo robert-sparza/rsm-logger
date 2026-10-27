@@ -401,3 +401,14 @@ def test_tiled_boxes_finds_small_ball_maps_to_frame_and_drops_cut_boxes():
     cut[100:108, 1276:1284] = 255                                  # straddles the first tile's right edge (x=1280)
     got = [b for b, _ in tiled_boxes(_FakeModel(), cut, {0}, 0.1, [(0, 0, 1280, 1280), (1024, 0, 2304, 1280)])]
     assert (1276.0, 100.0, 1284.0, 108.0) in got and len(got) == 1  # whole in the 2nd tile only
+
+
+def test_standing_player_with_jittery_foot_point_does_not_run():
+    import pandas as pd
+    from soccer_analyzer.analytics import player_stats
+    rng = np.random.default_rng(3)
+    n = 30 * 30                                              # 30 s at 30 fps
+    df = pd.DataFrame(dict(frame=np.arange(n), t=np.arange(n) / 30, track_id=1, cls="player", team=0,
+                           x=14 + rng.normal(0, 0.12, n), y=8 + rng.normal(0, 0.12, n)))
+    s = player_stats(df)
+    assert s.loc[1, "m_per_min"] < 25                         # raw frame-to-frame jitter would read ~400 m/min
