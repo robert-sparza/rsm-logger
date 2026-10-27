@@ -190,3 +190,10 @@ weakest-looking ones in the other team. Remove the line (or set it to 0) when th
 `space.csv`, `space_timeline.png` and in `summary.json`: `teamN_avg_polygon_m2`, `teamN_polygon_m2_per_player`
 (lower = more compact) and `teamN_space_control` (share of the pitch nearer to that team's players than to the other's).
 Needs `--calib`.
+
+### Your own settings (`config.local.yaml`)
+
+`config.yaml` comes with the code, so copying a new version over the folder replaces it. Put the settings that are
+yours in a file called `config.local.yaml` next to it (copy `config.local.example.yaml`): only the lines you write there
+replace the ones in `config.yaml`, and it is never part of a download. `config.yaml` itself now defaults to the
+trained model (`runs/train/soccer-v1b/weights/best.pt`, 1600 px) and `bib_count: 4`.

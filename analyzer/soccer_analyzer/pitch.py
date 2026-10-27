@@ -63,6 +63,15 @@ class Pitch:
             "right_penalty_spot": (L - ps, cy),
         }
 
+    def absent_landmarks(self) -> set[str]:
+        """Landmarks this pitch does not have: no goal area (depth or width 0) or no penalty spot (distance 0)."""
+        gone = set()
+        if self.goal_area_depth <= 0 or self.goal_area_width <= 0:
+            gone |= {"left_6yd_far_corner", "left_6yd_near_corner", "right_6yd_far_corner", "right_6yd_near_corner"}
+        if self.penalty_spot <= 0:
+            gone |= {"left_penalty_spot", "right_penalty_spot"}
+        return gone
+
     def marking_polylines(self, n: int = 40) -> list[np.ndarray]:
         """Every painted line as a polyline in pitch metres (for drawing/checking)."""
         L, W, cy = self.length, self.width, self.width / 2
@@ -72,6 +81,8 @@ class Pitch:
                  np.c_[L / 2 + self.circle_radius * np.cos(a), cy + self.circle_radius * np.sin(a)]]
         for x0, s in ((0, 1), (L, -1)):
             for d, w in ((self.box_depth, self.box_width), (self.goal_area_depth, self.goal_area_width)):
+                if d <= 0 or w <= 0:
+                    continue
                 lines.append(np.array([[x0, cy - w / 2], [x0 + s * d, cy - w / 2],
                                        [x0 + s * d, cy + w / 2], [x0, cy + w / 2]]))
         # Resample straight segments so they bend correctly under perspective.

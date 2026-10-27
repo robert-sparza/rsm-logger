@@ -3,8 +3,8 @@ model:
   #   yolo11s.pt = faster, yolo11m.pt = good balance on an RTX 3060 Ti (8 GB), yolo11l.pt = slower/better
   # Phase 2: replace with your own trained model, e.g. runs/train/soccer-v1/weights/best.pt
   # (classes are found by name: person/player, sports ball/ball - no ids to edit).
-  weights: yolo11m.pt
-  imgsz: 1280            # small, far-away players need high resolution; try 1920 for 4K footage
+  weights: runs/train/soccer-v1b/weights/best.pt
+  imgsz: 1600            # small, far-away players need high resolution; try 1920 for 4K footage
   conf: 0.25
   tile_size: 0           # 1280 = also look for the ball in full-resolution 1280 px crops of the pitch (needs --calib; ~3-5x slower,
                          # finds smaller / farther balls). 0 = off
@@ -19,7 +19,7 @@ teams:
   mode: auto               # auto = split by the two shirt colours (matches)
   # mode: bib              # training with bibs/vests: players wearing bib_color = team 1
   bib_color: neon_yellow   # neon_yellow | orange | pink | blue | red
-  bib_count: 2             # how many players wear the bib (never more than this labelled at once); remove if it varies
+  bib_count: 4             # how many players wear the bib (never more than this labelled at once); remove if it varies
   # (or just add --bib neon_yellow to analyze.py / live.py)
 
 analysis:

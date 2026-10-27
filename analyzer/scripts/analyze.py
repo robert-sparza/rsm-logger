@@ -32,8 +32,25 @@ from soccer_analyzer import viz  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _merge(base: dict, over: dict) -> dict:
+    out = dict(base)
+    for k, v in over.items():
+        out[k] = _merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
 def load_config(path: Path) -> dict:
-    return yaml.safe_load(path.read_text()) if path.exists() else {}
+    """config.yaml, with anything in config.local.yaml (same folder) laid over it.
+
+    config.local.yaml is yours: it is not part of the download, so copying a new version of the code over the
+    folder never replaces your weights, bib count and so on. Put only the lines you want to change in it.
+    """
+    cfg = yaml.safe_load(path.read_text()) if path.exists() else {}
+    local = path.with_name("config.local.yaml")
+    if local.exists():
+        cfg = _merge(cfg or {}, yaml.safe_load(local.read_text()) or {})
+        print(f"Config: {path.name} + {local.name}")
+    return cfg or {}
 
 
 def weights_path(name: str) -> str:

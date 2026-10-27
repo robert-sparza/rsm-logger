@@ -10,14 +10,16 @@ KEYS = "abcdefghijklmnoprtvwxyz"
 
 
 class CalibState:
-    def __init__(self, names: list[str]):
+    def __init__(self, names: list[str], absent=()):
+        """absent: landmarks this pitch doesn't have (no goal area, ...): never offered, but their letters stay put."""
         if len(names) > len(KEYS):
             raise ValueError("more landmarks than keys")
         self.names = list(names)
+        self.absent = set(absent)
         self.points: dict[str, tuple[float, float]] = {}
         self.skipped: set[str] = set()
         self.history: list[tuple[str, str]] = []        # ("click" | "skip", landmark)
-        self.current: str | None = self.names[0] if self.names else None
+        self.current: str | None = next((n for n in self.names if n not in self.absent), None)
 
     def key_of(self, name: str) -> str:
         return KEYS[self.names.index(name)]
@@ -27,7 +29,7 @@ class CalibState:
         start = self.names.index(after)
         for k in range(1, len(self.names) + 1):
             n = self.names[(start + k) % len(self.names)]
-            if n not in self.points and n not in self.skipped:
+            if n not in self.points and n not in self.skipped and n not in self.absent:
                 self.current = n
                 return
         self.current = None
@@ -52,7 +54,7 @@ class CalibState:
     def jump(self, key: str) -> bool:
         """Make the landmark with this letter current (re-clicking a placed one replaces its point)."""
         i = KEYS.find(key)
-        if 0 <= i < len(self.names):
+        if 0 <= i < len(self.names) and self.names[i] not in self.absent:
             self.current = self.names[i]
             return True
         return False

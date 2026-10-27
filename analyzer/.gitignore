@@ -6,3 +6,4 @@ data/videos/*
 runs/
 *.pt
 data/datasets/
+config.local.yaml

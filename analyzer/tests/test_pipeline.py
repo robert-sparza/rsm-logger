@@ -624,3 +624,26 @@ def test_ball_that_teleports_is_held_back_until_it_keeps_showing_up():
     assert pipe._ball_plausible(7, 6.5, 5.0)                       # the real ball is back: accepted, challenger forgotten
     accepted = [pipe._ball_plausible(10 + k, 25.0, 12.0) for k in range(20)]
     assert not accepted[0] and accepted[-1]                        # a ball that stays 20 m away becomes the ball
+
+
+def test_local_config_is_laid_over_the_main_one(tmp_path):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from analyze import load_config
+    (tmp_path / "config.yaml").write_text("model:\n  weights: a.pt\n  imgsz: 1280\nteams:\n  bib_count: 2\n")
+    assert load_config(tmp_path / "config.yaml")["model"]["weights"] == "a.pt"
+    (tmp_path / "config.local.yaml").write_text("model:\n  weights: b.pt\nteams:\n  bib_count: 4\n")
+    cfg = load_config(tmp_path / "config.yaml")
+    assert cfg["model"] == {"weights": "b.pt", "imgsz": 1280} and cfg["teams"]["bib_count"] == 4
+
+
+def test_pitch_without_goal_area_keeps_letters_and_skips_the_missing_landmarks():
+    from soccer_analyzer.calib_ui import CalibState
+    pitch = Pitch(28.5, 16.3, circle_radius=3.0, box_depth=5.0, box_width=9.1, goal_area_depth=0.0, penalty_spot=0.0)
+    gone = pitch.absent_landmarks()
+    assert "left_6yd_far_corner" in gone and "right_penalty_spot" in gone and "left_box_far_corner" not in gone
+    s = CalibState(list(pitch.landmarks()), gone)
+    s.jump(s.key_of("left_6yd_far_corner"))
+    assert s.current == "far_left_corner"                              # a missing landmark can't be chosen
+    names = list(pitch.landmarks())
+    assert s.key_of("right_box_far_corner") == "t"                     # letters don't shift
+    assert len(pitch.marking_polylines()) == 3 + 2                     # outline, halfway line, circle, 2 boxes (no goal areas)

@@ -1,0 +1,14 @@
+# Your own settings. Copy this file to config.local.yaml (same folder) and edit it.
+# Only the lines you write here replace the ones in config.yaml, and config.local.yaml is never
+# part of a download, so updating the code does not reset these.
+
+model:
+  weights: runs/train/soccer-v1b/weights/best.pt
+  imgsz: 1600
+
+teams:
+  bib_count: 4            # how many players wear the bib in this session; delete the line if it varies
+
+# analysis:
+#   ignore_zones: [[28.0, -5, 40, 25]]   # e.g. the coach's spot beyond the right goal line
+#   drop_static_s: 30

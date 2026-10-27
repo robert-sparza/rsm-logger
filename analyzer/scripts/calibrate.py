@@ -73,10 +73,12 @@ def main():
     landmarks = pitch.landmarks()
     if args.list:
         for key, (name, xy) in zip(KEYS, landmarks.items()):
+            if name in pitch.absent_landmarks():
+                continue
             print(f"{key}  {name:24s} at ({xy[0]:.1f} m, {xy[1]:.1f} m)")
         return
     frame = grab_frame(args.source, args.at)
-    state = CalibState(list(landmarks))
+    state = CalibState(list(landmarks), pitch.absent_landmarks())
     click = {"pt": None}
     H, Wf = frame.shape[:2]
     scale = max(0.6, Wf / 1920)                           # text size follows the video resolution
@@ -100,6 +102,8 @@ def main():
         """The pitch diagram with every landmark's letter: where each one is, and which are done / skipped / next."""
         r = ref0.copy()
         for name, xy in landmarks.items():
+            if name in state.absent:
+                continue
             st = ("now" if name == state.current else "done" if name in state.points
                   else "skip" if name in state.skipped else "todo")
             c = to_canvas(xy, ref_scale, MARGIN)
