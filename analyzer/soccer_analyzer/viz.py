@@ -8,6 +8,7 @@ import numpy as np
 
 from .pitch import Pitch
 
+PLOT_FIELD, PLOT_LINES = "#d9d9d9", "#1a1a1a"            # grey field, black lines for the matplotlib plots
 TEAM_FALLBACK = [(255, 255, 0), (255, 0, 255), (160, 160, 160)]  # BGR: cyan, magenta, grey (unknown)
 BALL_COLOR = (0, 230, 255)
 
@@ -104,10 +105,12 @@ def paste_minimap(frame: np.ndarray, mm: np.ndarray, width_frac: float = 0.25) -
 def _mpl_pitch(ax, pitch: Pitch):
     from matplotlib.patches import Circle, Rectangle
     L, W = pitch.length, pitch.width
-    ax.set_facecolor("#3c823c")
-    kw = dict(fill=False, ec="white", lw=1.5)
+    # Grey field with black lines: the lines stay visible under any heat map colour (and print well).
+    ax.set_facecolor(PLOT_FIELD)
+    ax.add_patch(Rectangle((0, 0), L, W, fc=PLOT_FIELD, ec="none", zorder=-1))
+    kw = dict(fill=False, ec=PLOT_LINES, lw=1.5, zorder=3)
     ax.add_patch(Rectangle((0, 0), L, W, **kw))
-    ax.plot([L / 2, L / 2], [0, W], color="white", lw=1.5)
+    ax.plot([L / 2, L / 2], [0, W], color=PLOT_LINES, lw=1.5, zorder=3)
     ax.add_patch(Circle((L / 2, W / 2), pitch.circle_radius, **kw))
     bd, bw, gd, gw = pitch.box_depth, pitch.box_width, pitch.goal_area_depth, pitch.goal_area_width
     for x0, s in ((0, 1), (L, -1)):
@@ -142,7 +145,7 @@ def plot_ball_path(ball, pitch: Pitch, path: Path):
     _mpl_pitch(ax, pitch)
     if len(ball):
         sc = ax.scatter(ball.x, ball.y, c=ball.t, cmap="viridis", s=4)
-        ax.plot(ball.x, ball.y, color="white", alpha=0.25, lw=0.8)
+        ax.plot(ball.x, ball.y, color="black", alpha=0.25, lw=0.8)
         fig.colorbar(sc, ax=ax, label="seconds", shrink=0.7)
     ax.set_title("Ball path")
     fig.savefig(path, dpi=120, bbox_inches="tight")
@@ -165,7 +168,7 @@ def plot_passes(passes, df, pitch: Pitch, team: int, path: Path):
         except KeyError:
             continue
         ax.annotate("", xy=(b.x, b.y), xytext=(a.x, a.y),
-                    arrowprops=dict(arrowstyle="->", color="yellow", lw=1.4, alpha=0.8))
+                    arrowprops=dict(arrowstyle="->", color="#c2185b", lw=1.4, alpha=0.85))
     ax.set_title(f"Team {team} passes")
     fig.savefig(path, dpi=120, bbox_inches="tight")
     plt.close(fig)
