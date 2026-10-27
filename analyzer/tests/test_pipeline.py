@@ -423,7 +423,8 @@ def _bib_scene(seconds=20, fps=10):
     for k in range(seconds * fps):
         t = k / fps
         for tid, x, p1 in ((1, 5.0, 0.8), (2, 12.0, 0.8), (3, 20.0 if not 5 <= t < 12 else 12.8, 0.4 if 5 <= t < 12 else 0.0)):
-            rows.append(dict(frame=k, t=t, track_id=tid, cls="player", x=x, y=5.0 + tid, vote=float(rng.random() < p1)))
+            rows.append(dict(frame=k, t=t, track_id=tid, cls="player", x=x + 0.6 * np.sin(t + tid), y=5.0 + tid,
+                             vote=float(rng.random() < p1)))
     return pd.DataFrame(rows)
 
 
@@ -548,11 +549,12 @@ def test_off_pitch_tracks_reasons_and_option_to_keep_players_standing_on_the_lin
     t = np.arange(0, 20, 0.1)
     rows = []
     for tid, x, y in ((1, 14.0, 8.0), (2, 14.0, 16.0), (3, 14.0, -2.0)):      # in play / waiting on the near line / outside
-        rows.append(pd.DataFrame(dict(t=t, track_id=tid, x=x + 0.05 * np.sin(t), y=y)))
+        rows.append(pd.DataFrame(dict(t=t, track_id=tid, x=x + 0.6 * np.sin(t), y=y)))
     df = pd.concat(rows)
     why = {}
     assert off_pitch_tracks(df, 28.5, 16.3, reasons=why) == {2, 3}
-    assert why == {"off_pitch": {3}, "standing_on_line": {2}}
+    assert why["off_pitch"] == {3} and why["standing_on_line"] == {2}
+    assert not why["ignore_zone"] and not why["static"] and not why["seated"]
     assert off_pitch_tracks(df, 28.5, 16.3, drop_standing_on_line=False) == {3}
 
 
@@ -576,3 +578,49 @@ def test_a_small_player_is_not_taken_for_an_occluded_one():
     out = fix_occluded_feet(df, hom)
     assert out[out.track_id == 4].occluded.mean() < 0.02        # the small kid keeps his own feet
     assert out.iloc[-1].occluded and abs(out.iloc[-1].py - 210) < 12
+
+
+def test_non_player_tracks_zone_static_and_seated():
+    import pandas as pd
+    from soccer_analyzer.stitch import off_pitch_tracks
+    t = np.arange(0, 60, 0.1)
+    rng = np.random.default_rng(0)
+
+    def track(tid, x, y, sway, aspect=0.4):
+        h = 200.0
+        return pd.DataFrame(dict(t=t, track_id=tid, x=x + sway * np.sin(t * 0.7) + rng.normal(0, 0.05, len(t)),
+                                 y=y + sway * np.cos(t * 0.5), bx1=0.0, bx2=aspect * h, by1=0.0, by2=h))
+    df = pd.concat([
+        track(1, 14, 8, 3.0),                  # a player, moving about
+        track(2, 28.3, 8.0, 0.2),              # the coach beside the goal line, hardly moving
+        track(3, 5.0, 8.0, 0.0),               # a post: not moving at all
+        track(4, 20.0, 5.0, 3.0, aspect=1.1),  # seated: box as wide as tall
+        track(5, 10.0, 4.0, 3.0),              # a player inside a zone someone listed
+    ])
+    why = {}
+    assert off_pitch_tracks(df, 28.5, 16.3, reasons=why) == {3, 4}                       # post + seated by default
+    assert off_pitch_tracks(df, 28.5, 16.3, static_s=30) == {2, 3, 4}                    # + the coach who stands still
+    assert off_pitch_tracks(df, 28.5, 16.3, static_s=30, ignore_zones=[[8, 2, 12, 6]]) == {2, 3, 4, 5}
+
+
+def test_overlap_duplicates_keeps_the_more_confident_of_two_boxes_on_one_player():
+    from soccer_analyzer.tracking import overlap_duplicates
+    boxes = np.array([[100, 100, 140, 220], [102, 110, 138, 215], [300, 100, 340, 220], [120, 100, 160, 220]], float)
+    conf = np.array([0.5, 0.8, 0.6, 0.4])
+    keep = overlap_duplicates(boxes, conf, 0.45)
+    assert list(keep) == [1, 2, 3]            # box 0 is a duplicate of box 1; box 3 only half overlaps box 1
+    torso = np.array([[100, 100, 140, 220], [104, 110, 136, 200]], float)      # a smaller box inside, about the same height
+    assert list(overlap_duplicates(torso, np.array([0.6, 0.5]))) == [0]
+    head = np.array([[100, 100, 140, 220], [105, 100, 135, 130]], float)       # a head box on the same body is another matter
+    assert list(overlap_duplicates(head, np.array([0.6, 0.5]))) == [0, 1]
+
+
+def test_ball_that_teleports_is_held_back_until_it_keeps_showing_up():
+    pipe = MatchPipeline.__new__(MatchPipeline)
+    pipe.fps, pipe.ball_max_speed, pipe._ball_last, pipe._challenger = 30.0, 18.0, None, None
+    assert pipe._ball_plausible(0, 5.0, 5.0)                       # first ball: accepted
+    assert pipe._ball_plausible(3, 6.0, 5.0)                       # moved 1 m in 0.1 s: fine
+    assert not pipe._ball_plausible(6, 25.0, 12.0)                 # a boot 20 m away: held back
+    assert pipe._ball_plausible(7, 6.5, 5.0)                       # the real ball is back: accepted, challenger forgotten
+    accepted = [pipe._ball_plausible(10 + k, 25.0, 12.0) for k in range(20)]
+    assert not accepted[0] and accepted[-1]                        # a ball that stays 20 m away becomes the ball

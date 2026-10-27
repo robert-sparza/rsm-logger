@@ -39,7 +39,14 @@ class MatchPipeline:
                  teams: TeamClassifier | BibClassifier | None = None,
                  team_warmup_frames: int = 50, color_every: int = 3, pitch_margin: float = 1.5,
                  fps: float = 30.0, reject_cone_colours: bool = True, bib_count: int | None = None,
-                 drop_standing_on_line: bool = True):
+                 drop_standing_on_line: bool = True, ignore_zones=None, drop_static_s: float = 0.0,
+                 ball_max_speed: float = 18.0):
+        self.ignore_zones = ignore_zones or []      # [[x_min, y_min, x_max, y_max], ...] in metres: nobody in there is a player
+        self.drop_static_s = drop_static_s          # people who barely move for this many seconds are not players (0 = off)
+        self.fps = fps
+        self.ball_max_speed = ball_max_speed        # m/s: a ball can't jump faster than this between detections
+        self._ball_last: tuple[int, float, float] | None = None       # frame, x, y of the last accepted ball
+        self._challenger: tuple[float, float, int] | None = None     # a ball somewhere else that keeps showing up
         self.drop_standing_on_line = drop_standing_on_line
         self.dropped: dict[str, set] = {}          # tracks removed as not-players, by reason (filled by dataframe())
         self.bib_count = bib_count        # how many players wear the bib (team 1): never label more than this at once
@@ -64,6 +71,22 @@ class MatchPipeline:
     def jersey_colors(self):
         return self.teams.team_colors_bgr() if self.teams.fitted else None
 
+    def _ball_plausible(self, frame: int, x: float, y: float) -> bool:
+        """A ball can't teleport. A detection far from where the ball just was (a boot, a bottle) is held back
+        until it keeps showing up at the same place for ~0.4 s; then the ball really is there."""
+        last = self._ball_last
+        dt = (frame - last[0]) / self.fps if last else None
+        if last is None or dt > 2.0 or np.hypot(x - last[1], y - last[2]) <= 3.0 + self.ball_max_speed * dt:
+            self._ball_last, self._challenger = (frame, x, y), None
+            return True
+        c = self._challenger
+        n = c[2] + 1 if c is not None and np.hypot(x - c[0], y - c[1]) <= 2.0 else 1
+        self._challenger = (x, y, n)
+        if n >= max(3, int(0.4 * self.fps)):
+            self._ball_last, self._challenger = (frame, x, y), None
+            return True
+        return False
+
     def step(self, frame_idx: int, t: float, frame: np.ndarray) -> list[Detection]:
         dets = self.tracker.step(frame)
         self._n += 1
@@ -80,6 +103,10 @@ class MatchPipeline:
         # Spectators, subs, coaches and people on neighbouring fields are not players.
         ball = self.ball.select(frame_idx, [(d, k and not (self.reject_cone_colours and cone_colored(frame, d.box)))
                                             for d, k in zip(dets, on_pitch) if d.cls == "ball"])
+        if ball is not None and self.hom is not None:
+            i = next(j for j, d in enumerate(dets) if d is ball)
+            if not self._ball_plausible(frame_idx, float(xy[i][0]), float(xy[i][1])):
+                ball = None
         keep = [(d.cls == "player" and k) or d is ball for d, k in zip(dets, on_pitch)]
         dets = [d for d, k in zip(dets, keep) if k]
         feet, xy = feet[keep], xy[keep]
@@ -136,7 +163,8 @@ class MatchPipeline:
             df.loc[players, "occluded"] = fixed["occluded"]
             df.loc[players, "track_id"] = split_on_team_change(df[players], self.teams.decide)
             off = off_pitch_tracks(df[players], self.pitch.length, self.pitch.width,
-                                   drop_standing_on_line=self.drop_standing_on_line, reasons=self.dropped)
+                                   drop_standing_on_line=self.drop_standing_on_line, reasons=self.dropped,
+                                   ignore_zones=self.ignore_zones, static_s=self.drop_static_s)
             df = df[~(players & df.track_id.isin(off))].copy()
             players = df.cls == "player"
             # Only pieces with >= 10 colour samples count as sure of their team.

@@ -65,13 +65,19 @@ def stitch_tracks(players: pd.DataFrame, max_gap_s: float = 8.0, max_speed: floa
 
 def off_pitch_tracks(players: pd.DataFrame, length: float, width: float, tolerance_m: float = 0.3,
                      touchline_m: float = 1.0, still_m: float = 2.0, min_s: float = 5.0,
-                     drop_standing_on_line: bool = True, reasons: dict | None = None) -> set[int]:
-    """Not players: tracks whose median position is outside the lines (bench,
-    spectators), or who stand almost still on a touchline for a while (a coach
-    on the line). Goal lines are left alone so goalkeepers are kept.
+                     drop_standing_on_line: bool = True, reasons: dict | None = None,
+                     ignore_zones=None, static_s: float = 0.0, static_spread_m: float = 0.6,
+                     seated_aspect: float = 0.75) -> set[int]:
+    """Tracks that are not players, by reason:
 
-    drop_standing_on_line=False keeps people who stand still on a touchline (players waiting their turn in a
-    drill look like that). `reasons`, if given, is filled with {"off_pitch": ids, "standing_on_line": ids}.
+    off_pitch         median position outside the lines (bench, spectators)
+    standing_on_line  stands almost still on a touchline for a while (a coach on the line)
+                      (drop_standing_on_line=False keeps them: players waiting their turn look like that)
+    ignore_zone       median position inside a zone you listed (x_min, y_min, x_max, y_max in metres)
+    static            barely moves for `static_s` seconds (static_s > 0): a coach, a post, a cone. Anything
+                      moving less than ~15 cm over 10 s is always dropped: no person stands that still
+    seated            the box is as wide as tall (sitting or lying), for 5+ seconds
+    Goal lines are left alone so goalkeepers are kept. `reasons`, if given, is filled with {reason: ids}.
     """
     p = players.dropna(subset=["x", "y"])
     g = p.groupby("track_id")
@@ -83,11 +89,25 @@ def off_pitch_tracks(players: pd.DataFrame, length: float, width: float, toleran
     spread = p.join(med, on="track_id", rsuffix="_m").assign(
         d=lambda d: np.hypot(d.x - d.x_m, d.y - d.y_m)).groupby("track_id").d.quantile(0.9)
     duration = g.t.max() - g.t.min()
-    coach = on_touchline & (spread < still_m) & (duration >= min_s) & ~out
+    line = on_touchline & (spread < still_m) & (duration >= min_s) & ~out
+    zone = pd.Series(False, index=med.index)
+    for x1, y1, x2, y2 in (ignore_zones or []):
+        zone |= med.x.between(x1, x2) & med.y.between(y1, y2)
+    static = (spread < 0.15) & (duration >= 10.0)
+    if static_s > 0:
+        static |= (spread < static_spread_m) & (duration >= static_s)
+    seated = pd.Series(False, index=med.index)
+    if {"bx1", "bx2", "by1", "by2"} <= set(p.columns):
+        aspect = ((p.bx2 - p.bx1) / (p.by2 - p.by1).clip(lower=1)).groupby(p.track_id).median()
+        seated = (aspect > seated_aspect) & (duration >= 5.0)
     if reasons is not None:
         reasons["off_pitch"] = set(med.index[out])
-        reasons["standing_on_line"] = set(med.index[coach])
-    return set(med.index[out | (coach if drop_standing_on_line else False)])
+        reasons["standing_on_line"] = set(med.index[line])
+        reasons["ignore_zone"] = set(med.index[zone])
+        reasons["static"] = set(med.index[static & ~out])
+        reasons["seated"] = set(med.index[seated])
+    drop = out | zone | static | seated | (line if drop_standing_on_line else False)
+    return set(med.index[drop])
 
 
 def split_on_team_change(players: pd.DataFrame, decide, window_s: float = 1.5, min_segment_s: float = 1.5,

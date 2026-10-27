@@ -9,6 +9,7 @@ model:
   tile_size: 0           # 1280 = also look for the ball in full-resolution 1280 px crops of the pitch (needs --calib; ~3-5x slower,
                          # finds smaller / farther balls). 0 = off
   tile_overlap: 0.2
+  player_nms_iou: 0.45   # of two player boxes overlapping more than this, keep one (stops one kid getting two tracks); 0 = off
   ball_conf: 0.15        # balls are small: accept less confident ball detections (the ball filter cleans up)
   device: 0              # GPU 0; use "cpu" to test without CUDA
   tracker: trackers/bytetrack_soccer.yaml  # longer memory so IDs survive occlusions
@@ -23,6 +24,9 @@ teams:
 
 analysis:
   pitch_margin: 1.5        # metres outside the lines still counted as on the pitch
+  drop_static_s: 30        # a person who barely moves for this many seconds is not a player (coach, post); 0 = off
+  ignore_zones: []         # areas where nobody is a player, in metres: [[x_min, y_min, x_max, y_max]], e.g. the coach's spot
+                           # beyond the right goal line of a 28.5 m pitch:  [[28.0, -5, 40, 25]]
   drop_standing_on_line: true  # people standing still on a touchline are taken for the coach; set false when players wait there in drills
 
 ball:

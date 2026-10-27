@@ -50,6 +50,35 @@ def make_mot_tracker(tracker_yaml: str):
         return cls(args=cfg, frame_rate=30)
 
 
+def overlap_duplicates(xyxy: np.ndarray, conf: np.ndarray, iou: float = 0.45, contain: float = 0.8) -> np.ndarray:
+    """Indices to keep: of two boxes that are really one person, only the more confident.
+
+    Two boxes are one person when they overlap more than `iou` (intersection over union), or when one lies
+    `contain` inside the other and they are about the same height. YOLO's own NMS (0.7) lets through the
+    "same person twice" boxes of a night image (they typically overlap 0.55-0.7); each then got its own track,
+    so one kid became two players. Two real players seldom overlap this much.
+    """
+    order = np.argsort(-np.asarray(conf), kind="stable")
+    keep: list[int] = []
+    for i in order:
+        a = xyxy[i]
+        dup = False
+        for j in keep:
+            b = xyxy[j]
+            iw, ih = min(a[2], b[2]) - max(a[0], b[0]), min(a[3], b[3]) - max(a[1], b[1])
+            if iw > 0 and ih > 0:
+                inter = iw * ih
+                area_a, area_b = (a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1])
+                same_height = 0.6 <= (a[3] - a[1]) / max(b[3] - b[1], 1e-9) <= 1.6
+                if inter / max(area_a + area_b - inter, 1e-9) > iou or (
+                        same_height and inter / max(min(area_a, area_b), 1e-9) > contain):
+                    dup = True
+                    break
+        if not dup:
+            keep.append(int(i))
+    return np.array(sorted(keep), dtype=int)
+
+
 def tile_grid(width: int, height: int, size: int, overlap: float = 0.2,
               roi: tuple[float, float, float, float] | None = None) -> list[tuple[int, int, int, int]]:
     """Tiles (x1, y1, x2, y2) of at most `size` px that cover `roi` (default: the whole frame).
@@ -133,10 +162,11 @@ class Tracker:
     def __init__(self, weights: str = "yolo11m.pt", imgsz: int = 1280, conf: float = 0.25,
                  player_names=PLAYER_NAMES, ball_names=BALL_NAMES, device: str | int | None = None,
                  tracker: str = DEFAULT_TRACKER, ball_conf: float = 0.15, tile_size: int = 0,
-                 tile_overlap: float = 0.2):
+                 tile_overlap: float = 0.2, player_nms_iou: float = 0.45):
         from ultralytics import YOLO  # imported lazily so tests don't need it
         self.model = YOLO(weights)
         self.imgsz, self.conf, self.ball_conf, self.device = imgsz, conf, ball_conf, device
+        self.player_nms_iou = player_nms_iou        # 0 = off
         self.player_ids = class_ids(self.model.names, player_names)
         self.ball_ids = class_ids(self.model.names, ball_names)
         if not self.player_ids:
@@ -172,6 +202,8 @@ class Tracker:
         boxes = res.boxes.cpu().numpy()
         cls = boxes.cls.astype(int)
         players = boxes[np.isin(cls, list(self.player_ids)) & (boxes.conf >= self.conf)]
+        if self.player_nms_iou and len(players) > 1:
+            players = players[overlap_duplicates(players.xyxy, players.conf, self.player_nms_iou)]
         tracks = self.mot.update(players, frame)            # rows: x1, y1, x2, y2, id, score, cls, idx
         for t in np.asarray(tracks).reshape(-1, 8) if len(tracks) else []:
             out.append(Detection(int(t[4]), "player", tuple(float(v) for v in t[:4]), float(t[5])))

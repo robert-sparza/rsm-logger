@@ -47,6 +47,7 @@ def make_tracker(cfg: dict) -> Tracker:
     return Tracker(weights=weights_path(m.get("weights", "yolo11m.pt")), imgsz=m.get("imgsz", 1280),
                    conf=m.get("conf", 0.25), ball_conf=m.get("ball_conf", 0.15), device=m.get("device"),
                    tile_size=m.get("tile_size", 0), tile_overlap=m.get("tile_overlap", 0.2),
+                   player_nms_iou=m.get("player_nms_iou", 0.45),
                    tracker=str(ROOT / m.get("tracker", "trackers/bytetrack_soccer.yaml")))
 
 
@@ -70,7 +71,9 @@ def make_pipeline(cfg: dict, hom, video_fps: float, bib: str | None = None) -> M
                          pitch_margin=cfg.get("analysis", {}).get("pitch_margin", 1.5), fps=video_fps,
                          reject_cone_colours=cfg.get("ball", {}).get("reject_cone_colours", True),
                          bib_count=(t.get("bib_count") if bib else None),
-                         drop_standing_on_line=cfg.get("analysis", {}).get("drop_standing_on_line", True))
+                         drop_standing_on_line=cfg.get("analysis", {}).get("drop_standing_on_line", True),
+                         ignore_zones=cfg.get("analysis", {}).get("ignore_zones") or [],
+                         drop_static_s=cfg.get("analysis", {}).get("drop_static_s", 30))
 
 
 def add_team_args(ap: argparse.ArgumentParser) -> None:
@@ -124,7 +127,10 @@ def main():
 
     df = pipe.save(out)
     for reason, label in (("off_pitch", "outside the lines (off the pitch)"),
-                          ("standing_on_line", "standing still on a touchline (taken for a coach)")):
+                          ("standing_on_line", "standing still on a touchline (taken for a coach)"),
+                          ("ignore_zone", "inside an ignore_zones area"),
+                          ("static", "that barely moved (coach, post, cone)"),
+                          ("seated", "that were sitting or lying")):
         ids = pipe.dropped.get(reason, set())
         if ids:
             print(f"Dropped {len(ids)} track(s) {label}. Wrong? Check the calibration"
