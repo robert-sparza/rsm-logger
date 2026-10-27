@@ -102,11 +102,23 @@ def main():
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
+    checked = False
 
+    tr = pipe.tracker
+    print(f"Model: {tr.model.ckpt_path if hasattr(tr.model, 'ckpt_path') else tr.model} "
+          f"(classes: {', '.join(tr.model.names.values())}) at {tr.imgsz} px")
     for idx, t, frame in read_frames(args.source, args.stride):
         if args.max_seconds and t > args.max_seconds:
             break
         pipe.step(idx, t, frame)
+        if t > 10 and not checked:
+            checked = True
+            if not any(r["cls"] == "player" for r in pipe.rows):
+                raise SystemExit(
+                    "\nNo players found in the first 10 seconds, so stopping. Likely causes:\n"
+                    "  1. the wrong model: check `weights:` in config.yaml (the good one is runs/train/soccer-v1b/weights/best.pt)\n"
+                    "  2. the wrong calibration for this camera position (--calib)\n"
+                    "  3. a wrong video path\n")
         if idx % (100 * args.stride) == 0:
             print(f"  t={t:7.1f}s  frame={idx}  {idx / args.stride / max(time.time() - t0, 1e-6):.1f} fps")
 
