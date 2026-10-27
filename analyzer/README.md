@@ -183,3 +183,10 @@ With bibs, `teams.bib_count` in `config.yaml` says how many players wear one (2 
 non-bib player standing next to bib wearers can pick up some of their colour; with the count set, the
 analyzer never labels more than that many players as the bib team at the same moment, and puts the
 weakest-looking ones in the other team. Remove the line (or set it to 0) when the number changes during a session.
+
+### Team polygons and space control
+
+`analyze.py` draws each team's shape (smallest polygon around its players) on the video and the minimap, and writes
+`space.csv`, `space_timeline.png` and in `summary.json`: `teamN_avg_polygon_m2`, `teamN_polygon_m2_per_player`
+(lower = more compact) and `teamN_space_control` (share of the pitch nearer to that team's players than to the other's).
+Needs `--calib`.

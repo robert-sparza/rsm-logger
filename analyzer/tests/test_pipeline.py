@@ -492,3 +492,25 @@ def test_joined_overlapping_tracks_leave_one_row_per_player_and_frame():
     out = pipe.dataframe()
     assert out.track_id.nunique() == 1
     assert not out.duplicated(["frame", "track_id"]).any()
+
+
+def test_team_hull_and_voronoi_control():
+    import pandas as pd
+    from soccer_analyzer.space import control_shares, hull, polygon_area, space_table
+    square = np.array([[0, 0], [10, 0], [10, 10], [0, 10], [5, 5]], float)       # centre point is inside the hull
+    assert abs(polygon_area(hull(square)) - 100) < 1e-6
+    assert hull(np.array([[0, 0], [1, 1], [2, 2]], float)) is None                # all on a line: no polygon
+    assert hull(np.array([[0, 0], [1, 1]], float)) is None
+    # two players split a 20 x 10 pitch down the middle
+    s = control_shares(np.array([[5, 5], [15, 5]], float), np.array([0, 1]), 20, 10, cell=0.5)
+    assert abs(s[0] - 0.5) < 0.02 and abs(s[1] - 0.5) < 0.02
+    # a table over frames: team 0 has 3 players in a corner (a triangle of 8 m²), team 1 has 3 spread out
+    rows = []
+    for f in range(3):
+        for i, (x, y) in enumerate([(2, 2), (6, 2), (4, 6)]):
+            rows.append(dict(frame=f, t=f / 10, track_id=i, cls="player", team=0, x=x, y=y))
+        for i, (x, y) in enumerate([(14, 2), (18, 2), (16, 9)]):
+            rows.append(dict(frame=f, t=f / 10, track_id=10 + i, cls="player", team=1, x=x, y=y))
+    tab = space_table(pd.DataFrame(rows), 20, 10)
+    assert len(tab) == 3 and abs(tab.hull0_m2.iloc[0] - 8) < 1e-6 and tab.hull1_m2.iloc[0] > 0
+    assert abs(tab.control0.iloc[0] + tab.control1.iloc[0] - 1) < 1e-6

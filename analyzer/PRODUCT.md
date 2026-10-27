@@ -190,6 +190,23 @@ duplicates where the views overlap. Sync them by a clap or a flash at the start.
 **XbotGo Falcon:** the vendor says firmware v3.3.0 has a fixed full-field "Baseball Mode" with manual zoom and no
 tracking. Test whether it gives a usable wide view for soccer. Vendor claim, not tested.
 
+## 9. Team polygons, space control and "field of view" (28 Oct 2026)
+
+- **Built (v1):** each team's convex hull (the space it uses) and Voronoi space control (every point belongs to the
+  nearest player), per frame. They need only positions and team, not stable track ids, so they hold up when
+  players crowd and IDs swap. Output: polygons on the minimap and on the camera view, `space.csv`,
+  `space_timeline.png`, and averages in `summary.json`.
+- **Next, from the research:** pitch control that weights each player by how fast he can reach a point (Spearman
+  model; open Metrica sample data exists for testing); area per player as a compactness measure in small-sided games
+  (4 v 4 and 7 v 7 drills in training are usually larger than in competition).
+- **Field of view / vision:** needs which way each player's upper body or head faces, so pose estimation (shoulder and
+  hip keypoints; median error about 27° on broadcast video in the cited work) plus a vision map with an occlusion
+  term. Research stage; the head-direction-equals-gaze assumption is itself unproven. Worth trying after the polygons.
+- Sources: https://databallpy.readthedocs.io/en/latest/features/space_occupation.html ;
+  https://floodlight.readthedocs.io/en/develop/modules/models/space.html ;
+  https://arxiv.org/pdf/2501.05870 ; https://thexgfootballclub.substack.com/p/what-do-players-really-see-on-the ;
+  https://www.arxiv.org/pdf/2602.18519 ; https://repositorio.iscte-iul.pt/bitstream/10071/28087/1/article_92315.pdf
+
 ## Sources
 
 - Veo Analytics 2 overview: https://support.veo.com/hc/en-us/articles/11873714080657-Veo-Analytics-2-Overview-and-features

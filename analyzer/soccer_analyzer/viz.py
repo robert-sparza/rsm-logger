@@ -56,10 +56,23 @@ def annotate_frame(frame, dets, teams: dict[int, int], team_colors, jersey_color
     return out
 
 
-def minimap(pitch: Pitch, points, team_colors, scale: float | None = None) -> np.ndarray:
-    """points: iterable of (x_m, y_m, team, is_ball). Drawn ~420 px wide whatever the pitch size."""
+def fill_polygon(img: np.ndarray, pts_px: np.ndarray, color, alpha: float = 0.25) -> None:
+    """Translucent polygon with an outline, drawn in place."""
+    pts = np.round(pts_px).astype(np.int32).reshape(-1, 1, 2)
+    layer = img.copy()
+    cv2.fillPoly(layer, [pts], color)
+    cv2.addWeighted(layer, alpha, img, 1 - alpha, 0, img)
+    cv2.polylines(img, [pts], True, color, 2, cv2.LINE_AA)
+
+
+def minimap(pitch: Pitch, points, team_colors, scale: float | None = None, polygons=None) -> np.ndarray:
+    """points: iterable of (x_m, y_m, team, is_ball). Drawn ~420 px wide whatever the pitch size.
+    polygons: optional {team: hull vertices in metres}, drawn under the players."""
     scale = scale or 420 / pitch.length
     img = draw_pitch(pitch, scale=scale)
+    for team, poly in (polygons or {}).items():
+        color = team_colors[team] if 0 <= team < len(team_colors) else TEAM_FALLBACK[2]
+        fill_polygon(img, np.array([to_canvas((x, y), scale) for x, y in poly], float), color)
     for x, y, team, is_ball in points:
         if not (-5 <= x <= pitch.length + 5 and -5 <= y <= pitch.width + 5):
             continue
@@ -159,7 +172,7 @@ def plot_passes(passes, df, pitch: Pitch, team: int, path: Path):
 
 
 def render_video(source: str, df, out_path: Path, fps: float, stride: int = 1, pitch: Pitch | None = None,
-                 legend_colors=None, max_seconds: float | None = None) -> None:
+                 legend_colors=None, max_seconds: float | None = None, hom=None, polygons: bool = False) -> None:
     """Second pass: draw the cleaned-up tracks (final IDs and teams) onto the video."""
     from .tracking import Detection, read_frames
     team_colors = TEAM_FALLBACK[:2]
@@ -176,11 +189,37 @@ def render_video(source: str, df, out_path: Path, fps: float, stride: int = 1, p
                 dets.append(Detection(int(r.track_id), r.cls, (r.bx1, r.by1, r.bx2, r.by2), r.conf))
                 pts.append((r.x, r.y, teams.get(r.track_id, -1), r.cls == "ball"))
         vis = annotate_frame(frame, dets, teams, team_colors, legend_colors)
+        polys = {}
+        if polygons and rows is not None:
+            from .space import frame_polygons
+            polys = frame_polygons(rows[rows.cls == "player"].assign(team=lambda d: d.track_id.map(teams).fillna(-1)))
+            if hom is not None:                                   # the team shape on the camera view itself
+                for team, poly in polys.items():
+                    fill_polygon(vis, hom.to_image(poly), team_colors[team] if team < len(team_colors) else TEAM_FALLBACK[2], 0.18)
         if pitch is not None:
-            vis = paste_minimap(vis, minimap(pitch, pts, team_colors))
+            vis = paste_minimap(vis, minimap(pitch, pts, team_colors, polygons=polys))
         if writer is None:
             h, w = vis.shape[:2]
             writer = cv2.VideoWriter(str(out_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
         writer.write(vis)
     if writer is not None:
         writer.release()
+
+
+def plot_space(table, path: Path, team_names=("Team 0", "Team 1")):
+    """Team polygon area and Voronoi space control over time."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig, (a, b) = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+    colors = ("#00c8ff", "#ff2fd0")
+    for k in (0, 1):
+        a.plot(table.t, table[f"hull{k}_m2"].rolling(15, min_periods=1).median(), color=colors[k], label=team_names[k])
+        b.plot(table.t, table[f"control{k}"].rolling(15, min_periods=1).median() * 100, color=colors[k], label=team_names[k])
+    a.set_ylabel("team polygon area (m²)")
+    b.set_ylabel("space control (% of pitch)")
+    b.set_xlabel("seconds")
+    a.legend()
+    a.set_title("Space used and space controlled (smoothed)")
+    fig.savefig(path, dpi=120, bbox_inches="tight")
+    plt.close(fig)

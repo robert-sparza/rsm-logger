@@ -115,7 +115,7 @@ def main():
         # Drawn after the whole video is analyzed, so IDs and teams are the final, joined ones.
         print("Writing annotated.mp4 ...")
         viz.render_video(args.source, df, out / "annotated.mp4", fps, args.stride,
-                         hom.pitch if hom else None, pipe.jersey_colors, args.max_seconds)
+                         hom.pitch if hom else None, pipe.jersey_colors, args.max_seconds, hom, hom is not None)
     summary = build_report(df, out, hom.pitch if hom else None)
     print(yaml.safe_dump(summary, sort_keys=False))
 

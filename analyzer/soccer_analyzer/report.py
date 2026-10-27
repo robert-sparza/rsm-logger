@@ -46,6 +46,20 @@ def build_report(df: pd.DataFrame, out_dir: Path, pitch: Pitch | None = None) ->
         if len(pace):
             summary[f"team{team}_avg_m_per_min"] = round(float(pace.mean()), 1)
 
+    from . import space
+    table = space.space_table(on_pitch, pitch.length, pitch.width)
+    if len(table):
+        table.to_csv(out_dir / "space.csv", index=False)
+        viz.plot_space(table, out_dir / "space_timeline.png")
+        for k in (0, 1):
+            h = table[f"hull{k}_m2"].dropna()
+            if len(h):
+                summary[f"team{k}_avg_polygon_m2"] = round(float(h.mean()), 1)
+                summary[f"team{k}_polygon_m2_per_player"] = round(float((h / table.loc[h.index, f"n{k}"]).mean()), 1)
+            c = table[f"control{k}"].dropna()
+            if len(c):
+                summary[f"team{k}_space_control"] = round(float(c.mean()), 3)
+
     ball = A.ball_track(on_pitch)
     ball.to_csv(out_dir / "ball.csv", index=False)
     viz.plot_ball_path(ball, pitch, out_dir / "ball_path.png")
