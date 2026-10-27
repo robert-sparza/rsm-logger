@@ -69,7 +69,8 @@ def make_pipeline(cfg: dict, hom, video_fps: float, bib: str | None = None) -> M
     return MatchPipeline(tracker, hom, teams=teams,
                          pitch_margin=cfg.get("analysis", {}).get("pitch_margin", 1.5), fps=video_fps,
                          reject_cone_colours=cfg.get("ball", {}).get("reject_cone_colours", True),
-                         bib_count=(t.get("bib_count") if bib else None))
+                         bib_count=(t.get("bib_count") if bib else None),
+                         drop_standing_on_line=cfg.get("analysis", {}).get("drop_standing_on_line", True))
 
 
 def add_team_args(ap: argparse.ArgumentParser) -> None:
@@ -110,6 +111,12 @@ def main():
             print(f"  t={t:7.1f}s  frame={idx}  {idx / args.stride / max(time.time() - t0, 1e-6):.1f} fps")
 
     df = pipe.save(out)
+    for reason, label in (("off_pitch", "outside the lines (off the pitch)"),
+                          ("standing_on_line", "standing still on a touchline (taken for a coach)")):
+        ids = pipe.dropped.get(reason, set())
+        if ids:
+            print(f"Dropped {len(ids)} track(s) {label}. Wrong? Check the calibration"
+                  + (" or set analysis.drop_standing_on_line: false in config.yaml" if reason == "standing_on_line" else "") + ".")
     print(f"Tracked {len(df)} detections in {time.time() - t0:.0f}s -> {out / 'tracks.csv'}")
     if not args.no_video:
         # Drawn after the whole video is analyzed, so IDs and teams are the final, joined ones.

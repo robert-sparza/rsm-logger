@@ -540,3 +540,17 @@ def test_calibration_clicks_can_skip_jump_and_undo():
     s.undo()
     s.undo()
     s.undo()
+
+
+def test_off_pitch_tracks_reasons_and_option_to_keep_players_standing_on_the_line():
+    import pandas as pd
+    from soccer_analyzer.stitch import off_pitch_tracks
+    t = np.arange(0, 20, 0.1)
+    rows = []
+    for tid, x, y in ((1, 14.0, 8.0), (2, 14.0, 16.0), (3, 14.0, -2.0)):      # in play / waiting on the near line / outside
+        rows.append(pd.DataFrame(dict(t=t, track_id=tid, x=x + 0.05 * np.sin(t), y=y)))
+    df = pd.concat(rows)
+    why = {}
+    assert off_pitch_tracks(df, 28.5, 16.3, reasons=why) == {2, 3}
+    assert why == {"off_pitch": {3}, "standing_on_line": {2}}
+    assert off_pitch_tracks(df, 28.5, 16.3, drop_standing_on_line=False) == {3}

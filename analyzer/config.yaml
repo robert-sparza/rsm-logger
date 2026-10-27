@@ -23,6 +23,7 @@ teams:
 
 analysis:
   pitch_margin: 1.5        # metres outside the lines still counted as on the pitch
+  drop_standing_on_line: true  # people standing still on a touchline are taken for the coach; set false when players wait there in drills
 
 ball:
   reject_cone_colours: true  # ignore vivid orange/yellow "balls" (training cones); set false for an orange/yellow ball
