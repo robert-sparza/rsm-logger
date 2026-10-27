@@ -82,7 +82,7 @@ def off_pitch_tracks(players: pd.DataFrame, length: float, width: float, toleran
     return set(med.index[out | coach])
 
 
-def split_on_team_change(players: pd.DataFrame, decide, window_s: float = 3.0, min_segment_s: float = 4.0,
+def split_on_team_change(players: pd.DataFrame, decide, window_s: float = 1.5, min_segment_s: float = 1.5,
                          first_new_id: int | None = None) -> pd.Series:
     """New track ids where the tracker swapped two players of different teams.
 
