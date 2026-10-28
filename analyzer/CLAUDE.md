@@ -9,7 +9,7 @@ Read `README.md`, `PHASE2.md` and `PRODUCT.md` first. Spanish-speaking club, pla
 ```
 .venv\Scripts\activate.bat
 python scripts\calibrate.py data\videos\X.mp4 --out runs\calib_4v4.json --at 5 --length 28.5 --width 16.3 --circle-radius 3.0 --box-depth 5.0 --box-width 9.1 --goal-area-depth 0 --penalty-spot 0
-python scripts\analyze.py data\videos\X.mp4 --calib runs\calib_4v4.json --out runs\<new folder> --bib neon_yellow
+python scripts\analyze.py data\videos\X.mp4 --calib runs\calib_4v4.json --out runs\<new folder> --bib neon_yellow --players 8
 python scripts\run_quality.py runs\<folder> --players 8 --bibs 4
 python -m pytest tests -q
 ```
