@@ -109,10 +109,15 @@ def main():
     ap.add_argument("--stride", type=int, default=1, help="process every Nth frame (2 = twice as fast)")
     ap.add_argument("--max-seconds", type=float, help="stop after this much video (for quick tests)")
     ap.add_argument("--no-video", action="store_true", help="skip writing annotated.mp4")
+    ap.add_argument("--tracker", help="tracker yaml for this run (overrides model.tracker in config.yaml), "
+                                      "e.g. trackers/botsort_reid.yaml")
     add_team_args(ap)
     args = ap.parse_args()
 
     cfg = load_config(Path(args.config))
+    if args.tracker:
+        cfg = _merge(cfg, {"model": {"tracker": args.tracker}})
+    print(f"Tracker: {cfg.get('model', {}).get('tracker', 'trackers/bytetrack_soccer.yaml')}")
     hom = Homography.load(args.calib) if args.calib else None
     if hom is None:
         print("No --calib given: tracking only, no pitch maps. Run scripts/calibrate.py first for full analysis.")

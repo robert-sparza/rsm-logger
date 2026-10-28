@@ -1,0 +1,17 @@
+# BoT-SORT with appearance matching (ReID) for the fixed tripod camera.
+# Same thresholds and memory as bytetrack_soccer.yaml, plus: when a detection overlaps a track's predicted box,
+# the two are also compared by how they look (an embedding of the crop), so two kids crossing keep their own IDs.
+# The camera does not move, so no global motion compensation (saves time on 4K frames).
+# Try it with: python scripts\analyze.py ... --tracker trackers/botsort_reid.yaml
+tracker_type: botsort
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.4
+track_buffer: 90        # frames, not seconds: ~1.5 s at 60 fps, ~3 s at 30 fps
+match_thresh: 0.8
+fuse_score: True
+gmc_method: none
+proximity_thresh: 0.5   # appearance is only used for pairs whose boxes overlap at least this much (IoU)
+appearance_thresh: 0.8  # how alike two crops must look (cosine similarity) to count as the same player
+with_reid: True
+model: runs/train/soccer-v1b/weights/best.pt   # our detector, trained on this footage, used as the crop encoder

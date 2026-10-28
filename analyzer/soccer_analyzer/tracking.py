@@ -43,6 +43,11 @@ def make_mot_tracker(tracker_yaml: str):
     from ultralytics.utils.checks import check_yaml
     cfg = IterableSimpleNamespace(**YAML.load(check_yaml(tracker_yaml)))
     cfg.device = None
+    reid = getattr(cfg, "model", "auto")
+    if getattr(cfg, "with_reid", False) and reid != "auto":
+        local = Path(__file__).resolve().parents[1] / reid      # ReID weights given relative to the analyzer folder
+        if local.exists():
+            cfg.model = str(local)
     cls = TRACKER_MAP[cfg.tracker_type]
     try:
         return cls(args=cfg)
