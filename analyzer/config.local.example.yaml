@@ -6,6 +6,9 @@ model:
   weights: runs/train/soccer-v1b/weights/best.pt
   imgsz: 1600
 
+session:
+  players: 8             # players on the pitch in this session (not the coach); scores the run in quality.txt
+
 teams:
   bib_count: 4            # how many players wear the bib in this session; delete the line if it varies
 

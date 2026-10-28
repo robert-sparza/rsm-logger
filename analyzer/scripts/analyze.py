@@ -24,6 +24,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from soccer_analyzer.pipeline import MatchPipeline  # noqa: E402
 from soccer_analyzer.pitch import Homography  # noqa: E402
+from soccer_analyzer.quality import format_quality, run_quality  # noqa: E402
 from soccer_analyzer.report import build_report  # noqa: E402
 from soccer_analyzer.teams import BIB_COLORS, BibClassifier, TeamClassifier  # noqa: E402
 from soccer_analyzer.tracking import Tracker, read_frames  # noqa: E402
@@ -162,6 +163,10 @@ def main():
                          hom.pitch if hom else None, pipe.jersey_colors, args.max_seconds, hom, hom is not None)
     summary = build_report(df, out, hom.pitch if hom else None)
     print(yaml.safe_dump(summary, sort_keys=False))
+    bibs = cfg.get("teams", {}).get("bib_count") if (args.bib or cfg.get("teams", {}).get("mode") == "bib") else None
+    text = format_quality(run_quality(df, cfg.get("session", {}).get("players"), bibs))
+    (out / "quality.txt").write_text(text + "\n")
+    print("Quality checks (set session.players in config.local.yaml to score the player count):\n" + text)
 
 
 if __name__ == "__main__":

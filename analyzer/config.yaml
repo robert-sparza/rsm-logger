@@ -30,5 +30,8 @@ analysis:
                            # beyond the right goal line of a 28.5 m pitch:  [[28.0, -5, 40, 25]]
   drop_standing_on_line: true  # people standing still on a touchline are taken for the coach; set false when players wait there in drills
 
+session:
+  players: null            # how many players are on the pitch (8 for a 4 v 4); lets the run be scored. Put it in config.local.yaml
+
 ball:
   reject_cone_colours: true  # ignore vivid orange/yellow "balls" (training cones); set false for an orange/yellow ball
