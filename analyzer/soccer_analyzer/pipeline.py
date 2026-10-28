@@ -40,7 +40,8 @@ class MatchPipeline:
                  team_warmup_frames: int = 50, color_every: int = 3, pitch_margin: float = 1.5,
                  fps: float = 30.0, reject_cone_colours: bool = True, bib_count: int | None = None,
                  drop_standing_on_line: bool = True, ignore_zones=None, drop_static_s: float = 0.0,
-                 ball_max_speed: float = 18.0):
+                 ball_max_speed: float = 18.0, idle_edge_m_per_min: float = 0.0):
+        self.idle_edge_m_per_min = idle_edge_m_per_min     # slower than this near a line = not a player (0 = off)
         self.ignore_zones = ignore_zones or []      # [[x_min, y_min, x_max, y_max], ...] in metres: nobody in there is a player
         self.drop_static_s = drop_static_s          # people who barely move for this many seconds are not players (0 = off)
         self.fps = fps
@@ -164,7 +165,8 @@ class MatchPipeline:
             df.loc[players, "track_id"] = split_on_team_change(df[players], self.teams.decide)
             off = off_pitch_tracks(df[players], self.pitch.length, self.pitch.width,
                                    drop_standing_on_line=self.drop_standing_on_line, reasons=self.dropped,
-                                   ignore_zones=self.ignore_zones, static_s=self.drop_static_s)
+                                   ignore_zones=self.ignore_zones, static_s=self.drop_static_s,
+                                   idle_edge_m_per_min=self.idle_edge_m_per_min)
             df = df[~(players & df.track_id.isin(off))].copy()
             players = df.cls == "player"
             # Only pieces with >= 10 colour samples count as sure of their team.

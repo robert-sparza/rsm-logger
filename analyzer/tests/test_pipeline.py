@@ -647,3 +647,17 @@ def test_pitch_without_goal_area_keeps_letters_and_skips_the_missing_landmarks()
     names = list(pitch.landmarks())
     assert s.key_of("right_box_far_corner") == "t"                     # letters don't shift
     assert len(pitch.marking_polylines()) == 3 + 2                     # outline, halfway line, circle, 2 boxes (no goal areas)
+
+
+def test_coach_pacing_slowly_by_the_goal_line_is_dropped_but_a_player_on_the_move_is_kept():
+    import pandas as pd
+    from soccer_analyzer.stitch import off_pitch_tracks
+    t = np.arange(0, 80, 0.1)
+    rng = np.random.default_rng(4)
+    noise = lambda: rng.normal(0, 0.05, len(t))
+    coach = pd.DataFrame(dict(t=t, track_id=1, x=27.6 + 1.0 * np.sin(t * 0.05) + noise(), y=6.0 + 0.3 * np.cos(t * 0.04) + noise()))
+    winger = pd.DataFrame(dict(t=t, track_id=2, x=27.4 + 1.0 * np.sin(t * 1.5) + noise(), y=6.0 + 3.0 * np.cos(t * 1.1) + noise()))
+    centre = pd.DataFrame(dict(t=t, track_id=3, x=14 + 3.0 * np.sin(t * 0.9) + noise(), y=8 + 3.0 * np.cos(t * 0.7) + noise()))
+    df = pd.concat([coach, winger, centre])
+    assert off_pitch_tracks(df, 28.5, 16.3) == set()                                    # off by default
+    assert off_pitch_tracks(df, 28.5, 16.3, idle_edge_m_per_min=20) == {1}

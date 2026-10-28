@@ -67,7 +67,8 @@ def off_pitch_tracks(players: pd.DataFrame, length: float, width: float, toleran
                      touchline_m: float = 1.0, still_m: float = 2.0, min_s: float = 5.0,
                      drop_standing_on_line: bool = True, reasons: dict | None = None,
                      ignore_zones=None, static_s: float = 0.0, static_spread_m: float = 0.6,
-                     seated_aspect: float = 0.75) -> set[int]:
+                     seated_aspect: float = 0.75, idle_edge_m_per_min: float = 0.0, edge_m: float = 1.5,
+                     idle_s: float = 20.0) -> set[int]:
     """Tracks that are not players, by reason:
 
     off_pitch         median position outside the lines (bench, spectators)
@@ -77,6 +78,8 @@ def off_pitch_tracks(players: pd.DataFrame, length: float, width: float, toleran
     static            barely moves for `static_s` seconds (static_s > 0): a coach, a post, a cone. Anything
                       moving less than ~15 cm over 10 s is always dropped: no person stands that still
     seated            the box is as wide as tall (sitting or lying), for 5+ seconds
+    idle_at_edge      (idle_edge_m_per_min > 0) stays within `edge_m` of a boundary line for `idle_s`+ seconds and covers
+                      less than that many metres per minute: a coach pacing the line. Players in a drill do 40+
     Goal lines are left alone so goalkeepers are kept. `reasons`, if given, is filled with {reason: ids}.
     """
     p = players.dropna(subset=["x", "y"])
@@ -100,13 +103,27 @@ def off_pitch_tracks(players: pd.DataFrame, length: float, width: float, toleran
     if {"bx1", "bx2", "by1", "by2"} <= set(p.columns):
         aspect = ((p.bx2 - p.bx1) / (p.by2 - p.by1).clip(lower=1)).groupby(p.track_id).median()
         seated = (aspect > seated_aspect) & (duration >= 5.0)
+    idle = pd.Series(False, index=med.index)
+    if idle_edge_m_per_min > 0:
+        from .analytics import smooth_track
+        near_edge = (np.minimum.reduce([med.x.abs(), (length - med.x).abs(), med.y.abs(), (width - med.y).abs()]) <= edge_m)
+        for tid in med.index[near_edge & (duration[med.index] >= idle_s)]:
+            q_ = p[p.track_id == tid].sort_values("t")
+            dts = q_.t.diff().dropna()
+            fps = float(1 / dts[dts > 0].median()) if (dts > 0).any() else 30.0
+            ts, xs, ys = smooth_track(q_, fps)
+            d, dt = np.hypot(np.diff(xs), np.diff(ys)), np.diff(ts)
+            ok = (dt > 0) & (dt <= 1.0)
+            if ok.sum() and dt[ok].sum() >= idle_s / 2 and d[ok].sum() / dt[ok].sum() * 60 < idle_edge_m_per_min:
+                idle[tid] = True
     if reasons is not None:
+        reasons["idle_at_edge"] = set(med.index[idle & ~out])
         reasons["off_pitch"] = set(med.index[out])
         reasons["standing_on_line"] = set(med.index[line])
         reasons["ignore_zone"] = set(med.index[zone])
         reasons["static"] = set(med.index[static & ~out])
         reasons["seated"] = set(med.index[seated])
-    drop = out | zone | static | seated | (line if drop_standing_on_line else False)
+    drop = out | zone | static | seated | idle | (line if drop_standing_on_line else False)
     return set(med.index[drop])
 
 

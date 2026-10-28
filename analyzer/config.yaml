@@ -25,6 +25,7 @@ teams:
 analysis:
   pitch_margin: 1.5        # metres outside the lines still counted as on the pitch
   drop_static_s: 30        # a person who barely moves for this many seconds is not a player (coach, post); 0 = off
+  drop_idle_at_edge: 20    # near a line and covering fewer than this many metres per minute for 20 s+ = a coach, not a player; 0 = off
   ignore_zones: []         # areas where nobody is a player, in metres: [[x_min, y_min, x_max, y_max]], e.g. the coach's spot
                            # beyond the right goal line of a 28.5 m pitch:  [[28.0, -5, 40, 25]]
   drop_standing_on_line: true  # people standing still on a touchline are taken for the coach; set false when players wait there in drills

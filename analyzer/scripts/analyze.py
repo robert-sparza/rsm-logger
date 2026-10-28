@@ -90,7 +90,8 @@ def make_pipeline(cfg: dict, hom, video_fps: float, bib: str | None = None) -> M
                          bib_count=(t.get("bib_count") if bib else None),
                          drop_standing_on_line=cfg.get("analysis", {}).get("drop_standing_on_line", True),
                          ignore_zones=cfg.get("analysis", {}).get("ignore_zones") or [],
-                         drop_static_s=cfg.get("analysis", {}).get("drop_static_s", 30))
+                         drop_static_s=cfg.get("analysis", {}).get("drop_static_s", 30),
+                         idle_edge_m_per_min=cfg.get("analysis", {}).get("drop_idle_at_edge", 20))
 
 
 def add_team_args(ap: argparse.ArgumentParser) -> None:
@@ -147,7 +148,8 @@ def main():
                           ("standing_on_line", "standing still on a touchline (taken for a coach)"),
                           ("ignore_zone", "inside an ignore_zones area"),
                           ("static", "that barely moved (coach, post, cone)"),
-                          ("seated", "that were sitting or lying")):
+                          ("seated", "that were sitting or lying"),
+                          ("idle_at_edge", "that hardly moved near a line (coach)")):
         ids = pipe.dropped.get(reason, set())
         if ids:
             print(f"Dropped {len(ids)} track(s) {label}. Wrong? Check the calibration"
