@@ -92,7 +92,8 @@ def make_pipeline(cfg: dict, hom, video_fps: float, bib: str | None = None) -> M
                          drop_standing_on_line=cfg.get("analysis", {}).get("drop_standing_on_line", True),
                          ignore_zones=cfg.get("analysis", {}).get("ignore_zones") or [],
                          drop_static_s=cfg.get("analysis", {}).get("drop_static_s", 30),
-                         idle_edge_m_per_min=cfg.get("analysis", {}).get("drop_idle_at_edge", 20))
+                         idle_edge_m_per_min=cfg.get("analysis", {}).get("drop_idle_at_edge", 20),
+                         players=cfg.get("session", {}).get("players"))
 
 
 def add_team_args(ap: argparse.ArgumentParser) -> None:
@@ -111,12 +112,16 @@ def main():
     ap.add_argument("--no-video", action="store_true", help="skip writing annotated.mp4")
     ap.add_argument("--tracker", help="tracker yaml for this run (overrides model.tracker in config.yaml), "
                                       "e.g. trackers/botsort_reid.yaml")
+    ap.add_argument("--players", type=int, help="players on the pitch (8 for a 4 v 4; overrides session.players): "
+                                                "scores the run, and with --bib joins broken tracks per team")
     add_team_args(ap)
     args = ap.parse_args()
 
     cfg = load_config(Path(args.config))
     if args.tracker:
         cfg = _merge(cfg, {"model": {"tracker": args.tracker}})
+    if args.players:
+        cfg = _merge(cfg, {"session": {"players": args.players}})
     print(f"Tracker: {cfg.get('model', {}).get('tracker', 'trackers/bytetrack_soccer.yaml')}")
     hom = Homography.load(args.calib) if args.calib else None
     if hom is None:

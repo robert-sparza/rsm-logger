@@ -63,6 +63,106 @@ def stitch_tracks(players: pd.DataFrame, max_gap_s: float = 8.0, max_speed: floa
     return root
 
 
+def _reach(gap: float, max_speed: float = 7.0, slack_m: float = 1.5) -> float:
+    """How far a player can plausibly get in `gap` seconds (same rule as stitch_tracks)."""
+    gap = max(gap, 0.0)
+    return slack_m + min(max_speed * gap, 4.0 + 2.0 * gap)
+
+
+def _join_cost(rows: np.ndarray, edge_rows: int = 5, short_of_player=None, long_gap_s: float = 1.0,
+               min_short: float = 0.8) -> float:
+    """rows: (t, x, y, group) sorted by t, of two groups that are never seen in the same frame.
+
+    Wherever the timeline switches from one group to the other, the jump from where the first was last seen to
+    where the second shows up is compared with how far a player could run in that time. Returns the worst
+    switch (distance / reach): <= 1 is a plausible single player, higher is less and less likely.
+    short_of_player(t0, t1): share of that time in which the team was seen with fewer players than it has.
+    Across a gap over `long_gap_s` the join only counts (otherwise inf) if the team was short most of the gap
+    (`min_short`): if everyone was seen, the vanished player was on the pitch under another id, and the
+    track that appears later is no more likely to be him than anyone else.
+    """
+    g = rows[:, 3]
+    cuts = np.flatnonzero(g[1:] != g[:-1]) + 1
+    bounds = np.concatenate([[0], cuts, [len(rows)]])
+    worst = 0.0
+    for a, b, c in zip(bounds[:-2], bounds[1:-1], bounds[2:]):
+        end = np.median(rows[max(a, b - edge_rows):b, 1:3], axis=0)
+        start = np.median(rows[b:min(c, b + edge_rows), 1:3], axis=0)
+        gap = rows[b, 0] - rows[b - 1, 0]
+        if short_of_player is not None and gap > long_gap_s and short_of_player(rows[b - 1, 0], rows[b, 0]) < min_short:
+            return np.inf
+        worst = max(worst, float(np.hypot(*(start - end))) / _reach(gap))
+    return worst
+
+
+def link_by_count(players: pd.DataFrame, teams: dict[int, int], team_size: dict[int, int],
+                  max_cost: float = 1.5, shared_frames: int = 3, same_spot_m: float = 1.5) -> dict[int, int]:
+    """Join a team's tracks until it has no more tracks than players (e.g. 4 in bibs, 4 without).
+
+    stitch_tracks only joins a track to one that ended shortly before, nearby. Knowing how many players a team
+    has adds a stronger clue: two tracks of the same team that are never on the pitch at the same moment can be
+    one player, even after a long gap or when the pieces interleave. Pairs are joined cheapest first (see
+    _join_cost) while the team has more tracks than `team_size[team]`. Pairs seen more than `same_spot_m`
+    apart in more than `shared_frames` frames are two people (both boxes on one spot is one player boxed
+    twice, which the pipeline cleans up after). Joins costing more than `max_cost` are never made, so a stray
+    extra (a coach, a wrong team) stays apart rather than being glued onto a player.
+    Returns {track id: id of the group it joined} for every track that was joined.
+    """
+    root: dict[int, int] = {}
+    p = players.dropna(subset=["x", "y"])
+    for team, size in team_size.items():
+        tids = [t for t, tm in teams.items() if tm == team and t in set(p.track_id)]
+        if len(tids) <= size:
+            continue
+        sub = p[p.track_id.isin(tids)].sort_values("t").drop_duplicates(["track_id", "frame"])
+        frame_t = players.drop_duplicates("frame").sort_values("t").t.to_numpy()     # every analysed frame
+        seen = sub.groupby("t").size().reindex(frame_t, fill_value=0).to_numpy()   # team players seen per frame
+
+        def short_of_player(t0: float, t1: float) -> float:
+            inside = (frame_t > t0) & (frame_t < t1)
+            return float((seen[inside] < size).mean()) if inside.any() else 1.0
+
+        pos = {t: g.set_index("frame")[["x", "y"]] for t, g in sub.groupby("track_id")}
+        rows = {t: g[["t", "x", "y"]].to_numpy() for t, g in sub.groupby("track_id")}
+        members = {t: [t] for t in tids}
+        cache: dict[tuple[int, int], float] = {}
+
+        def apart(a: int, b: int) -> int:
+            both = pos[a].join(pos[b], how="inner", rsuffix="_b")
+            return int((np.hypot(both.x - both.x_b, both.y - both.y_b) > same_spot_m).sum())
+
+        def cost(a: int, b: int) -> float:
+            key = (min(a, b), max(a, b))
+            if key not in cache:
+                if apart(a, b) > shared_frames:
+                    cache[key] = np.inf
+                else:
+                    r = np.vstack([np.column_stack([rows[a], np.zeros(len(rows[a]))]),
+                                   np.column_stack([rows[b], np.ones(len(rows[b]))])])
+                    r = r[np.argsort(r[:, 0], kind="stable")]
+                    _, first = np.unique(r[:, 0], return_index=True)   # a shared frame: one sample is enough
+                    cache[key] = _join_cost(r[np.sort(first)], short_of_player=short_of_player)
+            return cache[key]
+
+        while len(members) > size:
+            pairs = [(cost(a, b), a, b) for i, a in enumerate(members) for b in list(members)[i + 1:]]
+            c, a, b = min(pairs)
+            if c > max_cost:
+                break
+            keep, gone = (a, b) if rows[a][0, 0] <= rows[b][0, 0] else (b, a)   # the group seen first keeps its id
+            members[keep] += members.pop(gone)
+            extra = pos.pop(gone)
+            pos[keep] = pd.concat([pos[keep], extra[~extra.index.isin(pos[keep].index)]]).sort_index()
+            rows[keep] = np.vstack([rows[keep], rows.pop(gone)])
+            rows[keep] = rows[keep][np.argsort(rows[keep][:, 0], kind="stable")]
+            cache = {k: v for k, v in cache.items() if keep not in k and gone not in k}
+        for keep, ms in members.items():
+            for t in ms:
+                if t != keep:
+                    root[t] = keep
+    return root
+
+
 def off_pitch_tracks(players: pd.DataFrame, length: float, width: float, tolerance_m: float = 0.3,
                      touchline_m: float = 1.0, still_m: float = 2.0, min_s: float = 5.0,
                      drop_standing_on_line: bool = True, reasons: dict | None = None,

@@ -27,7 +27,11 @@ ball jumps per minute. Compare runs on the SAME video. Best known run on the 112
 1. IDs break: about 22 tracks for 8 players in 112 s. BoT-SORT with ReID was tried (`--tracker trackers/botsort_reid.yaml`,
    our detector as the crop encoder): on 4v4_quick_touch_3 (58 s) 1.8 vs 1.9 tracks per player and 65% vs 64% bib frames,
    but 2.6 vs 24 fps, so ByteTrack stays the default. ReID only compares boxes that already overlap (IoU >= 0.5), so it
-   can't rejoin a player lost for a second or more. Next: link tracklets by position + bib/team + known player count.
+   can't rejoin a player lost for a second or more. Count-aware linking is built (`stitch.link_by_count`, on with
+   `--players 8 --bib ...`): 1.9 -> 1.6 tracks per player on that clip (2.8 -> 2.6 offline on the 112 s run). It only
+   joins across a gap > 1 s when the team was a player short for most of it; allowing any non-overlapping join scored
+   1.4 but two of those joins were guesses. What is left: tracks that mix two players of the same team (the earlier
+   stitching or a same-team ID swap), and an extra person (8.5 per frame on the 112 s clip) blocking joins.
 2. The detector was trained on one 78 s session. More labelled sessions (Roboflow, see PHASE2.md) is the biggest lever:
    night 4 v 4 clips with overlapping players, coach and spectators as their own class, several balls.
 3. Ball in play is found in about half the frames; try `model.tile_size: 1280` and compare with `scripts/evaluate.py --tile`.

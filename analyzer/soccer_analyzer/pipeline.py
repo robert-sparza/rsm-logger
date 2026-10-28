@@ -10,7 +10,7 @@ import pandas as pd
 from .ball import BallSelector, cone_colored
 from .pitch import Homography, Pitch
 from .occlusion import fix_occluded_feet
-from .stitch import cap_team_size, off_pitch_tracks, split_on_team_change, stitch_tracks
+from .stitch import cap_team_size, link_by_count, off_pitch_tracks, split_on_team_change, stitch_tracks
 from .teams import BibClassifier, TeamClassifier
 from .tracking import Detection, Tracker
 from .viz import TEAM_FALLBACK
@@ -40,7 +40,8 @@ class MatchPipeline:
                  team_warmup_frames: int = 50, color_every: int = 3, pitch_margin: float = 1.5,
                  fps: float = 30.0, reject_cone_colours: bool = True, bib_count: int | None = None,
                  drop_standing_on_line: bool = True, ignore_zones=None, drop_static_s: float = 0.0,
-                 ball_max_speed: float = 18.0, idle_edge_m_per_min: float = 0.0):
+                 ball_max_speed: float = 18.0, idle_edge_m_per_min: float = 0.0, players: int | None = None):
+        self.players = players            # players on the pitch (8 for a 4 v 4): with bib_count, joins tracks per team
         self.idle_edge_m_per_min = idle_edge_m_per_min     # slower than this near a line = not a player (0 = off)
         self.ignore_zones = ignore_zones or []      # [[x_min, y_min, x_max, y_max], ...] in metres: nobody in there is a player
         self.drop_static_s = drop_static_s          # people who barely move for this many seconds are not players (0 = off)
@@ -182,6 +183,11 @@ class MatchPipeline:
             root = stitch_tracks(df[players], teams={k: t for k, t in teams.items() if t >= 0})
             df.loc[players, "track_id"] = df.loc[players, "track_id"].map(root).fillna(df.track_id).astype(int)
             teams = {root.get(k, k): t for k, t in teams.items()}
+            if self.players and self.players > self.bib_count:
+                # Known team sizes: tracks of one team never seen together (far apart) can be one player.
+                root = link_by_count(df[players], teams, {1: self.bib_count, 0: self.players - self.bib_count})
+                df.loc[players, "track_id"] = df.loc[players, "track_id"].map(lambda t: root.get(t, t))
+                teams = {root.get(k, k): t for k, t in teams.items()}
         if clean:
             # Joining tracks that overlap by a frame can leave two boxes for one player in that frame: keep the surer one.
             dup = df[players].sort_values("conf", ascending=False).duplicated(["frame", "track_id"])

@@ -454,6 +454,36 @@ def test_stitch_joins_a_new_id_that_starts_one_frame_before_the_old_one_ends():
     assert stitch_tracks(df)[2] == 1
 
 
+def _piece(tid, t0, t1, x, y=5.0, fps=10):
+    import pandas as pd
+    t = np.round(np.arange(t0, t1, 1 / fps), 3)
+    return pd.DataFrame(dict(frame=np.round(t * fps).astype(int), t=t, track_id=tid, x=x, y=y))
+
+
+def test_link_by_count_joins_a_team_down_to_its_size_but_not_two_players_seen_together():
+    import pandas as pd
+    from soccer_analyzer.stitch import link_by_count
+    # Team 1 has 2 players. Player A is seen as 1, lost for 10 s, then comes back as 3 a few metres away:
+    # too long a gap for stitch_tracks, but the team was a player short the whole time, so 3 is A.
+    # 2 is the other player, on the pitch the whole time, so it can't be joined with 1 or 3.
+    df = pd.concat([_piece(1, 0, 5, 5.0), _piece(2, 0, 30, 20.0), _piece(3, 15, 30, 9.0)])
+    teams = {1: 1, 2: 1, 3: 1}
+    assert link_by_count(df, teams, {1: 2}) == {3: 1}
+    assert link_by_count(df, teams, {1: 3}) == {}                      # 3 players: nothing to join
+
+
+def test_link_by_count_keeps_a_track_apart_when_the_whole_team_was_seen_during_the_gap():
+    import pandas as pd
+    from soccer_analyzer.stitch import link_by_count
+    # Team of 2. Track 1 ends at 5 s, but tracks 2 and 4 show both players from 5 to 15 s: player 1 was among
+    # them under another id, so 3 (appearing at 15 s) is no more likely to be him. 4 overlaps 1 by a frame
+    # on the same spot (one player boxed twice at a hand-off) and joins it.
+    df = pd.concat([_piece(1, 0, 5, 5.0), _piece(2, 0, 30, 20.0), _piece(4, 4.9, 15, 5.2),
+                    _piece(3, 15.5, 30, 12.0, y=12.0)])
+    root = link_by_count(df, {1: 1, 2: 1, 3: 1, 4: 1}, {1: 2})
+    assert root.get(4) == 1 and 3 not in root
+
+
 def test_pipeline_bib_count_limits_bib_players_per_frame():
     pitch = Pitch(28.5, 16.3)
     lm = pitch.landmarks()
