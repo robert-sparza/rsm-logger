@@ -114,12 +114,16 @@ def main():
                                       "e.g. trackers/botsort_reid.yaml")
     ap.add_argument("--players", type=int, help="players on the pitch (8 for a 4 v 4; overrides session.players): "
                                                 "scores the run, and with --bib joins broken tracks per team")
+    ap.add_argument("--tile", type=int, help="ball tile size in px for this run (overrides model.tile_size, 0 = off); "
+                                             "1280 finds the ball about twice as often but runs ~3x slower")
     add_team_args(ap)
     args = ap.parse_args()
 
     cfg = load_config(Path(args.config))
     if args.tracker:
         cfg = _merge(cfg, {"model": {"tracker": args.tracker}})
+    if args.tile is not None:
+        cfg = _merge(cfg, {"model": {"tile_size": args.tile}})
     if args.players:
         cfg = _merge(cfg, {"session": {"players": args.players}})
     print(f"Tracker: {cfg.get('model', {}).get('tracker', 'trackers/bytetrack_soccer.yaml')}")

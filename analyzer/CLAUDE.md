@@ -34,8 +34,11 @@ ball jumps per minute. Compare runs on the SAME video. Best known run on the 112
    stitching or a same-team ID swap), and an extra person (8.5 per frame on the 112 s clip) blocking joins.
 2. The detector was trained on one 78 s session. More labelled sessions (Roboflow, see PHASE2.md) is the biggest lever:
    night 4 v 4 clips with overlapping players, coach and spectators as their own class, several balls.
-3. Ball in play is found in about half the frames; try `model.tile_size: 1280` and compare with `scripts/evaluate.py --tile`.
-4. Passes / turnovers are built on the ball and are unreliable until 3 improves.
+3. Ball: `analyze.py --tile 1280` (ball tiles for that run only; live stays without) on 4v4_quick_touch_3: frames with a
+   ball 25% -> 54%, still 0 ball jumps, players unchanged, but 761 s vs 162 s (4.7x slower). evaluate.py --tile 1280:
+   ball in play 38% -> 81%, 96% near a player. Use --tile for recorded sessions; it is not the default yet.
+4. Passes / turnovers are built on the ball and are unreliable: with tiles on that 58 s clip passes went 59 -> 88 and
+   turnovers 76 -> 140, far too many turnovers for a 4 v 4. The ball is now found often enough to work on the pass logic.
 5. Team polygons and space control (soccer_analyzer/space.py) are new: check them on real footage.
 
 ## Rules
